@@ -60,14 +60,14 @@ class Flags:
 
 class Register:
     def __init__(self):
-        self._a: int = 15
+        self._a: int = 255
         self._flags = Flags()
         self._b: int = 1
-        self._c: int = 0
-        self._d: int = 0
-        self._e: int = 0
-        self._h: int = 0
-        self._l: int = 0
+        self._c: int = 1
+        self._d: int = 1
+        self._e: int = 1
+        self._h: int = 1
+        self._l: int = 1
         self._sp: int = 0
         self._pc: int = 0
 
