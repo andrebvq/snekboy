@@ -1,73 +1,82 @@
 from dataclasses import dataclass
 from enum import Enum, auto
-import numpy as np
+from typing import Optional
+from utils import BitField, validate_byte
 
-class Register():
+class FlagBit(Enum):
+    ZERO = 7
+    SUBTRACT = 6
+    HALF_CARRY = 5
+    CARRY = 4
+
+class Flags:
     def __init__(self):
-        # ToDo? Force u8 type?
-        self.a = 0 # Accumulator
-        self.f = 0 # Cpu flag
-        self.b = 0 # Generic
-        self.c = 0 # Generic
-        self.d = 0 # Generic
-        self.e = 0 # Generic
-        self.h = 0 # Memory
-        self.l = 0 # Memory
-        self.sp = 0 # Stack pointer
-        self.pc = 0 # Program counter
-    
-    @property
-    def af(self):
-        # Combine AF
-        # ToDo? Force u16 type?
-        return (self.a << 8) | self.f
-    
-    @property
-    def bc(self):
-        # Combine BC
-        return (self.b << 8) | self.c
-    
-    @property
-    def de(self):
-        # Combine DE
-        return (self.d << 8) | self.e
-    
-    @property
-    def hl(self):
-        # Combine HL
-        return (self.h << 8) | self.l
+        self._bits = BitField()
 
-# Flags constants
-ZERO_FLAG_BYTE_POSITION = 7
-SUBTRACT_FLAG_BYTE_POSITION = 6
-HALF_CARRY_FLAG_BYTE_POSITION = 5
-CARRY_FLAG_BYTE_POSITION = 4
+    @property
+    def zero(self) -> bool:
+        return self._bits.get_bit(FlagBit.ZERO.value)
 
-@dataclass
-class FlagsRegister:
-    zero: bool
-    subtract: bool
-    half_carry: bool
-    carry: bool
+    @zero.setter
+    def zero(self, value: bool) -> None:
+        self._bits.modify_bit(FlagBit.ZERO.value, value)
+
+    @property
+    def subtract(self) -> bool:
+        return self._bits.get_bit(FlagBit.SUBTRACT.value)
+
+    @subtract.setter
+    def subtract(self, value: bool) -> None:
+        self._bits.modify_bit(FlagBit.SUBTRACT.value, value)
+
+    @property
+    def half_carry(self) -> bool:
+        return self._bits.get_bit(FlagBit.HALF_CARRY.value)
+
+    @half_carry.setter
+    def half_carry(self, value: bool) -> None:
+        self._bits.modify_bit(FlagBit.HALF_CARRY.value, value)
+
+    @property
+    def carry(self) -> bool:
+        return self._bits.get_bit(FlagBit.CARRY.value)
+
+    @carry.setter
+    def carry(self, value: bool) -> None:
+        self._bits.modify_bit(FlagBit.CARRY.value, value)
 
     def to_byte(self) -> int:
-        # Flags to byte -> u8
-        return (
-            (1 if self.zero else 0) << ZERO_FLAG_BYTE_POSITION |
-            (1 if self.subtract else 0) << SUBTRACT_FLAG_BYTE_POSITION |
-            (1 if self.half_carry else 0) << HALF_CARRY_FLAG_BYTE_POSITION |
-            (1 if self.carry else 0) << CARRY_FLAG_BYTE_POSITION
-        )
+        return self._bits.value
 
-    @classmethod
-    def from_byte(cls, byte: int) -> 'FlagsRegister':
-        # Flags from byte -> ?
-        return cls(
-            zero=((byte >> ZERO_FLAG_BYTE_POSITION) & 0b1) != 0,
-            subtract=((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 0b1) != 0,
-            half_carry=((byte >> HALF_CARRY_FLAG_BYTE_POSITION) & 0b1) != 0,
-            carry=((byte >> CARRY_FLAG_BYTE_POSITION) & 0b1) != 0
-        )
+    def from_byte(self, value: int) -> None:
+        self._bits = BitField(validate_byte(value))
+
+    def __str__(self) -> str:
+        return (f"Z:{int(self.zero)} "
+                f"N:{int(self.subtract)} "
+                f"H:{int(self.half_carry)} "
+                f"C:{int(self.carry)}")
+
+class Register:
+    def __init__(self):
+        self._a: int = 0
+        self._flags = Flags()
+        self._b: int = 0
+        self._c: int = 0
+        self._d: int = 0
+        self._e: int = 0
+        self._h: int = 0
+        self._l: int = 0
+        self._sp: int = 0
+        self._pc: int = 0
+
+    @property
+    def flags(self) -> Flags:
+        return self._flags
+
+    def __repr__(self) -> str:
+        return (f"Register(a=0x{self._a:02x}, f=0x{self._flags.to_byte():02x}, "
+                f"b=0x{self._b:02x}, c=0x{self._c:02x})")
 
 class ArithmeticTarget(Enum):
     A = auto()
@@ -78,48 +87,93 @@ class ArithmeticTarget(Enum):
     H = auto()
     L = auto()
 
+class InstructionType(Enum):
+    ADD = auto()
 
 @dataclass
-class Instruction():
-    class Type(Enum):
-        ADD = auto()
+class Instruction:
+    type: InstructionType
+    target: Optional[ArithmeticTarget] = None
 
-    type: Type
-    target: ArithmeticTarget | None = None
-
-
-class CPU():
+class CPU:
     def __init__(self):
-        self.registers = Register
+        self.registers = Register()
+        self._initialize_state()
 
-    def overflowing_add(value):
-        return True if value > 255 else False
+    def _initialize_state(self):
+        #self.registers._a = 0x01
+        self.registers.flags.zero = True
+        self.registers.flags.subtract = False
+        self.registers.flags.half_carry = True
+        self.registers.flags.carry = True
 
     def execute(self, instruction: Instruction) -> None:
-        match instruction.type:
+        if instruction.type == InstructionType.ADD:
+            self._execute_add(instruction.target)
 
-            case Instruction.Type.ADD:
-                match instruction.target:
-                    case ArithmeticTarget.B:
-                        self.registers.a += self.registers.b
-                    case ArithmeticTarget.C:
-                        self.registers.a += self.registers.c
-                    case ArithmeticTarget.D:
-                        self.registers.a += self.registers.d
-                    case ArithmeticTarget.E:
-                        self.registers.a += self.registers.e                                            
-                    case ArithmeticTarget.H:
-                        self.registers.a += self.registers.h
-                    case ArithmeticTarget.L:
-                        self.registers.a += self.registers.l
-                    case _:
-                        pass
+    def _execute_add(self, target: Optional[ArithmeticTarget]) -> None:
+        if target is None:
+            return
 
-            case _:
-                pass
+        value_to_add = {
+            ArithmeticTarget.B: self.registers._b,
+            ArithmeticTarget.C: self.registers._c,
+            ArithmeticTarget.D: self.registers._d,
+            ArithmeticTarget.E: self.registers._e,
+            ArithmeticTarget.H: self.registers._h,
+            ArithmeticTarget.L: self.registers._l,
+        }.get(target, 0)
 
+        current_a = self.registers._a
+        result = current_a + value_to_add
 
-if __name__=="__main__":
-    inst = Instruction(Instruction.Type.ADD, ArithmeticTarget.A)
-    print(inst.type)
-    print(inst.target)
+        self.registers.flags.zero = (result & 0xFF) == 0
+        self.registers.flags.subtract = False
+        self.registers.flags.half_carry = (current_a & 0xF) + (value_to_add & 0xF) > 0xF
+        self.registers.flags.carry = result > 0xFF
+
+        self.registers._a = validate_byte(result)
+
+    def __str__(self) -> str:
+        return (f"A: {self.registers._a:02X} "
+                f"F: [{self.registers.flags}] "
+                f"BC: {self.registers._b:02X}{self.registers._c:02X} "
+                f"DE: {self.registers._d:02X}{self.registers._e:02X} "
+                f"HL: {self.registers._h:02X}{self.registers._l:02X} "
+                f"SP: {self.registers._sp:04X} "
+                f"PC: {self.registers._pc:04X}")
+
+def test_flags():
+    cpu = CPU()
+    
+    # Test flag operations
+    print("Initial flags:", cpu.registers.flags)
+    
+    # Set some flags
+    cpu.registers.flags.zero = True
+    cpu.registers.flags.carry = True
+    print("After setting Z and C:", cpu.registers.flags)
+    
+    # Clear a flag
+    cpu.registers.flags.zero = False
+    print("After clearing Z:", cpu.registers.flags)
+    
+    # Test flag byte conversion
+    flag_byte = cpu.registers.flags.to_byte()
+    print(f"Flags as byte: 0x{flag_byte:02X}")
+    
+    # Set flags from byte
+    cpu.registers.flags.from_byte(0b11110000)
+    print("After setting from byte:", cpu.registers.flags)
+
+if __name__ == "__main__":
+    cpu = CPU()
+    print("Initial CPU state:")
+    print(cpu)
+
+    instruction = Instruction(InstructionType.ADD, ArithmeticTarget.B)
+    cpu.execute(instruction)
+    print("\nAfter ADD B:")
+    print(cpu)
+
+    test_flags()
