@@ -24,7 +24,7 @@ def test_flags():
     print("After setting from byte:", cpu.registers.flags)
 
 
-def test_add_r_instruction():
+def test_add_instruction():
     # Test cases structure: (a_value, target_value, expected_result, expected_flags)
     # expected_flags is a tuple of (zero, subtract, half_carry, carry)
     test_cases = [

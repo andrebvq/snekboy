@@ -1,6 +1,6 @@
 # Game Boy CPU Opcodes
 # Structure:
-# opcode: [Instruction name, instruction length in bytes, machine cycles, flags affected]
+# opcode: [Instruction name, instruction length in bytes, machine cyc`les, flags affected]
 # Flags: Z N H C (in that order)
 # 0 = flag not affected
 # 1 = flag is affected
