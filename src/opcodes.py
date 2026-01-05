@@ -1,6 +1,8 @@
 # Game Boy CPU Opcodes
+
 # Structure:
-# opcode: [Instruction name, instruction length in bytes, machine cyc`les, flags affected]
+# opcode: [Instruction name, instruction length in bytes, machine cycles, flags affected]
+
 # Flags: Z N H C (in that order)
 # 0 = flag not affected
 # 1 = flag is affected
@@ -159,5 +161,5 @@ CB_OPCODES = {
     
     # Set operations
     0xC0: ["SET 0,B", 2, 8, (0,0,0,0)],    # Set bit 0
-    0xC1: ["SET 0,C", 2]
+    0xC1: ["SET 0,C", 2, 8, (0,0,0,0)],    # Set bit 0
 }

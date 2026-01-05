@@ -1,4 +1,4 @@
-from cpu import CPU, Instruction, InstructionType, ArithmeticTarget
+from snekboy.src.cpu import CPU, Instruction, InstructionType, ArithmeticTarget
 
 def test_flags():
     cpu = CPU()
