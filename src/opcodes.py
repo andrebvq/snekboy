@@ -129,7 +129,55 @@ OPCODES = {
     0x17: ["RLA", 1, 4, (0,0,0,1)],        # Rotate A left through carry
     0x0F: ["RRCA", 1, 4, (0,0,0,1)],       # Rotate A right
     0x1F: ["RRA", 1, 4, (0,0,0,1)],        # Rotate A right through carry
-    
+
+    # Logical operations
+    0xA0: ["AND B", 1, 4, (1,0,1,0)],      # AND B with A
+    0xA1: ["AND C", 1, 4, (1,0,1,0)],
+    0xA2: ["AND D", 1, 4, (1,0,1,0)],
+    0xA3: ["AND E", 1, 4, (1,0,1,0)],
+    0xA4: ["AND H", 1, 4, (1,0,1,0)],
+    0xA5: ["AND L", 1, 4, (1,0,1,0)],
+    0xA6: ["AND (HL)", 1, 8, (1,0,1,0)],
+    0xA7: ["AND A", 1, 4, (1,0,1,0)],
+    0xE6: ["AND n", 2, 8, (1,0,1,0)],      # AND immediate
+
+    0xB0: ["OR B", 1, 4, (1,0,0,0)],       # OR B with A
+    0xB1: ["OR C", 1, 4, (1,0,0,0)],
+    0xB2: ["OR D", 1, 4, (1,0,0,0)],
+    0xB3: ["OR E", 1, 4, (1,0,0,0)],
+    0xB4: ["OR H", 1, 4, (1,0,0,0)],
+    0xB5: ["OR L", 1, 4, (1,0,0,0)],
+    0xB6: ["OR (HL)", 1, 8, (1,0,0,0)],
+    0xB7: ["OR A", 1, 4, (1,0,0,0)],
+    0xF6: ["OR n", 2, 8, (1,0,0,0)],       # OR immediate
+
+    0xA8: ["XOR B", 1, 4, (1,0,0,0)],      # XOR B with A
+    0xA9: ["XOR C", 1, 4, (1,0,0,0)],
+    0xAA: ["XOR D", 1, 4, (1,0,0,0)],
+    0xAB: ["XOR E", 1, 4, (1,0,0,0)],
+    0xAC: ["XOR H", 1, 4, (1,0,0,0)],
+    0xAD: ["XOR L", 1, 4, (1,0,0,0)],
+    0xAE: ["XOR (HL)", 1, 8, (1,0,0,0)],
+    0xAF: ["XOR A", 1, 4, (1,0,0,0)],
+    0xEE: ["XOR n", 2, 8, (1,0,0,0)],      # XOR immediate
+
+    # Compare
+    0xB8: ["CP B", 1, 4, (1,1,1,1)],       # Compare A with B
+    0xB9: ["CP C", 1, 4, (1,1,1,1)],
+    0xBA: ["CP D", 1, 4, (1,1,1,1)],
+    0xBB: ["CP E", 1, 4, (1,1,1,1)],
+    0xBC: ["CP H", 1, 4, (1,1,1,1)],
+    0xBD: ["CP L", 1, 4, (1,1,1,1)],
+    0xBE: ["CP (HL)", 1, 8, (1,1,1,1)],
+    0xBF: ["CP A", 1, 4, (1,1,1,1)],
+    0xFE: ["CP n", 2, 8, (1,1,1,1)],       # Compare with immediate
+
+    # Miscellaneous
+    0x27: ["DAA", 1, 4, (1,0,1,1)],        # Decimal adjust A
+    0x2F: ["CPL", 1, 4, (0,1,1,0)],        # Complement A
+    0x37: ["SCF", 1, 4, (0,0,0,1)],        # Set carry flag
+    0x3F: ["CCF", 1, 4, (0,0,0,1)],        # Complement carry flag
+
     # Control
     0x00: ["NOP", 1, 4, (0,0,0,0)],        # No operation
     0x76: ["HALT", 1, 4, (0,0,0,0)],       # Halt until interrupt

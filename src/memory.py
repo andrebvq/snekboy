@@ -44,7 +44,30 @@ class Memory:
         return int(self._data[address])
     
     def write_byte(self, address: int, value: int) -> None:
-        """Write a single byte to memory"""
+        """Write byte with serial port handling"""
+        address = validate_word(address)
+        value = validate_byte(value)
+    
+        # Serial port transfer (test ROM output)
+        if address == 0xFF01:
+            # Serial data - the character being sent
+            self._serial_buffer = value
+    
+        elif address == 0xFF02:
+            # Serial control - if bit 7 is set, transfer starts
+            if value == 0x81:
+                # Transfer requested
+                char = chr(self._serial_buffer) if 32 <= self._serial_buffer < 127 else '.'
+                print(char, end='', flush=True)  # Print to console
+                self._data[0xFF01] = 0x00  # Clear data
+                self._data[0xFF02] = 0x01  # Mark transfer complete
+                return
+    
+        self._data[address] = value
+    
+    """
+    def write_byte(self, address: int, value: int) -> None:
+        # Write a single byte to memory
         address = validate_word(address)
         value = validate_byte(value)
         self._write_count += 1
@@ -64,6 +87,7 @@ class Memory:
             pass
         
         self._data[address] = value
+    """
     
     def read_word(self, address: int) -> int:
         """Read a 16-bit word (little-endian)"""

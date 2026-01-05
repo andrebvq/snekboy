@@ -4,7 +4,8 @@
       "Bash(wc:*)",
       "Bash(python3:*)",
       "Bash(grep:*)",
-      "Bash(python run_tests.py:*)"
+      "Bash(python run_tests.py:*)",
+      "Bash(python tools/disassemble_rom.py:*)"
     ]
   }
 }
