@@ -69,9 +69,56 @@ class Memory:
                 self._cpu._system_counter = 0
             return
 
-        # TAC register (0xFF07) - writing resets timer counter
-        # Note: Timer counter reset is handled in CPU, not here
-        # We just store the value normally
+        # TIMA register (0xFF05) - handle writes during overflow delay
+        if address == 0xFF05:
+            if self._cpu and self._cpu._timer_overflow_cycles > 0:
+                # Writing to TIMA during overflow delay cancels the reload and interrupt
+                self._cpu._timer_overflow_cycles = 0
+            self._data[address] = value
+            return
+
+        # TMA register (0xFF06) - no special handling needed, but might be written during reload
+        # The reload logic in CPU will handle reading the new value if written on reload cycle
+
+        # TAC register (0xFF07) - obscure behavior on write
+        if address == 0xFF07:
+            if self._cpu:
+                old_tac = self._data[0xFF07]
+                new_tac = value
+
+                # Check if old timer was enabled
+                old_enabled = (old_tac & 0x04) != 0
+                new_enabled = (new_tac & 0x04) != 0
+
+                old_freq = old_tac & 0x03
+                new_freq = new_tac & 0x03
+
+                # Bit positions for frequencies
+                bit_positions = [9, 3, 5, 7]
+
+                # The falling edge detector monitors: (selected_bit) AND (enable_bit)
+                # Get old AND gate output
+                if old_enabled:
+                    old_bit_pos = bit_positions[old_freq]
+                    old_selected_bit = (self._cpu._system_counter >> old_bit_pos) & 1
+                    old_and_output = old_selected_bit & 1  # old_enabled is True, so AND with 1
+                else:
+                    old_and_output = 0  # If disabled, AND output is always 0
+
+                # Get new AND gate output
+                if new_enabled:
+                    new_bit_pos = bit_positions[new_freq]
+                    new_selected_bit = (self._cpu._system_counter >> new_bit_pos) & 1
+                    new_and_output = new_selected_bit & 1  # new_enabled is True, so AND with 1
+                else:
+                    new_and_output = 0  # If disabled, AND output is always 0
+
+                # Falling edge detection: 1 → 0 transition triggers timer tick
+                if old_and_output == 1 and new_and_output == 0:
+                    self._cpu._trigger_timer_tick()
+
+            self._data[address] = value
+            return
 
         # Serial port transfer (test ROM output)
         if address == 0xFF01:

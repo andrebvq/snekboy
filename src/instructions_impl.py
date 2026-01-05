@@ -433,7 +433,9 @@ class InstructionImplementations:
         if offset > 127:
             offset = offset - 256
 
-        result = self.registers._sp + offset
+        # Save original SP for flag calculations
+        sp_before = self.registers._sp
+        result = sp_before + offset
 
         self.registers._sp = validate_word(result)
 
@@ -441,8 +443,8 @@ class InstructionImplementations:
         self.registers.flags.zero = False
         self.registers.flags.subtract = False
         # Half-carry and carry are set based on lower byte addition
-        self.registers.flags.half_carry = ((self.registers._sp & 0xF) + (offset & 0xF)) > 0xF
-        self.registers.flags.carry = ((self.registers._sp & 0xFF) + (offset & 0xFF)) > 0xFF
+        self.registers.flags.half_carry = ((sp_before & 0xF) + (offset & 0xF)) > 0xF
+        self.registers.flags.carry = ((sp_before & 0xFF) + (offset & 0xFF)) > 0xFF
 
     def _execute_ld_hl_sp_n(self, offset) -> None:
         """LD HL,SP+n - Load SP + signed offset into HL"""

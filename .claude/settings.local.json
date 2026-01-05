@@ -16,7 +16,9 @@
       "Bash(PYTHONPATH=. /c/msys64/ucrt64/bin/python.exe:*)",
       "Bash(tee:*)",
       "Bash(ls:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(timeout 60 PYTHONPATH=. /c/msys64/ucrt64/bin/python.exe:*)",
+      "Bash(PYTHONPATH=. timeout 60 /c/msys64/ucrt64/bin/python.exe:*)"
     ]
   }
 }

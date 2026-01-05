@@ -311,6 +311,12 @@ class CPU(InstructionImplementations):
         # Disable IME
         self.ime = False
 
+        # Cancel EI pending if interrupt occurs
+        self._ei_pending = False
+
+        # Exit halt mode
+        self.halted = False
+
         # Clear the interrupt flag
         if_flags = self.memory.read_byte(0xFF0F)
         if_flags &= ~(1 << interrupt_bit)
@@ -325,6 +331,21 @@ class CPU(InstructionImplementations):
         # Jump to interrupt vector
         interrupt_vectors = [0x0040, 0x0048, 0x0050, 0x0058, 0x0060]
         self.registers._pc = interrupt_vectors[interrupt_bit]
+
+    def _trigger_timer_tick(self) -> None:
+        """
+        Trigger a spurious timer tick (from TAC write obscure behavior).
+        This increments TIMA and handles overflow.
+        """
+        tima = self.memory.read_byte(0xFF05)
+        tima += 1
+
+        if tima > 0xFF:
+            # Overflow - set TIMA to 0 and start delay
+            self.memory.write_byte(0xFF05, 0x00)
+            self._timer_overflow_cycles = 1
+        else:
+            self.memory.write_byte(0xFF05, tima)
 
     def _update_timers(self, cycles: int) -> None:
         """
@@ -396,23 +417,26 @@ class CPU(InstructionImplementations):
 
     def step(self) -> int:
         """Execute one instruction"""
-        # When halted, CPU wakes up if any interrupt is pending (even with IME=0)
+        # If halted, update timers first (so interrupt flags can be set)
         if self.halted:
+            cycles = 4  # 4 T-cycles = 1 M-cycle
+            m_cycles = cycles // 4
+            self._update_timers(m_cycles)
+            self.total_cycles += cycles
+
+            # Then check if we should wake (after timers updated)
             ie = self.memory.read_byte(0xFFFF)
             if_flags = self.memory.read_byte(0xFF0F)
             if ie & if_flags & 0x1F:
                 self.halted = False  # Wake from halt
 
-        # Check for interrupts (only services them if IME=1)
-        if self._check_interrupts():
-            cycles = 20  # Interrupt handling takes ~5 cycles (simplified)
-            self._update_timers(cycles)
-            self.total_cycles += cycles
             return cycles
 
-        if self.halted:
-            cycles = 4
-            self._update_timers(cycles)
+        # Check for interrupts (only services them if IME=1)
+        if self._check_interrupts():
+            cycles = 20  # Interrupt handling takes ~5 M-cycles (20 T-cycles) (simplified)
+            m_cycles = cycles // 4
+            self._update_timers(m_cycles)
             self.total_cycles += cycles
             return cycles
 
@@ -431,7 +455,10 @@ class CPU(InstructionImplementations):
             self._ei_pending = False
 
         # UPDATE
-        self._update_timers(cycles)
+        # Note: cycles from opcodes are in T-cycles, but _update_timers expects M-cycles
+        # 1 M-cycle = 4 T-cycles
+        m_cycles = cycles // 4
+        self._update_timers(m_cycles)
         self.total_cycles += cycles
 
         return cycles
@@ -439,8 +466,11 @@ class CPU(InstructionImplementations):
     def run_until(self, max_cycles: int) -> None:
         """Run CPU for a specified number of cycles"""
         target_cycles = self.total_cycles + max_cycles
-        while self.total_cycles < target_cycles and not self.halted:
+        while self.total_cycles < target_cycles:
             self.step()
+            # Note: We continue stepping even when halted, because:
+            # 1. Timers need to keep running while halted
+            # 2. Interrupts can wake the CPU from HALT
 
     def execute(self, instruction: Instruction) -> None:
         """Execute decoded instruction"""
