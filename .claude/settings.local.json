@@ -5,7 +5,15 @@
       "Bash(python3:*)",
       "Bash(grep:*)",
       "Bash(python run_tests.py:*)",
-      "Bash(python tools/disassemble_rom.py:*)"
+      "Bash(python tools/disassemble_rom.py:*)",
+      "Bash(python tests/test_with_blargg.py:*)",
+      "Bash(where:*)",
+      "Bash(C:msys64ucrt64binpython.exe tests/test_with_blargg.py)",
+      "Bash(py tests/test_with_blargg.py)",
+      "Bash(python -m tests.test_with_blargg:*)",
+      "Bash(/c/Users/andre/AppData/Local/Microsoft/WindowsApps/python3:*)",
+      "Bash(/c/msys64/ucrt64/bin/python.exe:*)",
+      "Bash(PYTHONPATH=. /c/msys64/ucrt64/bin/python.exe:*)"
     ]
   }
 }

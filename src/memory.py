@@ -15,17 +15,19 @@ Memory Map:
 0xFFFF        : Interrupt Enable Register
 """
 
-import numpy as np
 from typing import Optional
 from src.utils import validate_byte, validate_word, MemoryRanges
 
 class Memory:
     """Game Boy Memory Management Unit"""
-    
+
     def __init__(self):
         # 64KB address space (0x0000 to 0xFFFF)
-        self._data = np.zeros(65536, dtype=np.uint8)
-        
+        self._data = bytearray(65536)
+
+        # Serial buffer for test ROM output
+        self._serial_buffer = 0
+
         # Optional: Track read/write for debugging
         self._read_count = 0
         self._write_count = 0
@@ -106,9 +108,8 @@ class Memory:
     
     def load_rom(self, rom_data: bytes, offset: int = 0) -> None:
         """Load ROM data into memory at specified offset"""
-        rom_array = np.frombuffer(rom_data, dtype=np.uint8)
-        length = min(len(rom_array), 65536 - offset)
-        self._data[offset:offset + length] = rom_array[:length]
+        length = min(len(rom_data), 65536 - offset)
+        self._data[offset:offset + length] = rom_data[:length]
         print(f"Loaded {length} bytes of ROM at address 0x{offset:04X}")
     
     def load_rom_file(self, filepath: str) -> None:
@@ -138,6 +139,6 @@ class Memory:
     
     def reset(self) -> None:
         """Clear all memory"""
-        self._data.fill(0)
+        self._data = bytearray(65536)
         self._read_count = 0
         self._write_count = 0

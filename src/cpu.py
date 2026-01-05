@@ -21,20 +21,7 @@ class ArithmeticTarget(Enum):
     IMMEDIATE = auto()
     HL_INDIRECT = auto()
 
-class InstructionType(Enum):
-    ADD = auto()
-    SUB = auto()
-    INC = auto()
-    DEC = auto()
-    LD = auto()
-    JP = auto()
-    JR = auto()
-    CALL = auto()
-    RET = auto()
-    PUSH = auto()
-    POP = auto()
-    NOP = auto()
-    HALT = auto()
+# Note: InstructionType is imported from cpu_decoder, not defined here
 
 @dataclass
 class Instruction:
@@ -102,6 +89,14 @@ class CPU(InstructionImplementations):
             raise NotImplementedError(
                 f"Opcode 0x{opcode:02X} ({name}) not yet implemented at PC=0x{self.registers._pc - 1:04X}"
         )
+
+        # CB instructions need special cycle handling
+        # 8 cycles for register operations, 16 for (HL)
+        if opcode == 0xCB:
+            if target == '(HL)':
+                cycles = 16
+            else:
+                cycles = 8
 
         return (instr_type, target, immediate, cycles)
     
@@ -497,6 +492,115 @@ class CPU(InstructionImplementations):
 
         elif instr_type == InstructionType.EI:
             self._execute_ei()
+
+        # Control flow
+        elif instr_type == InstructionType.JP:
+            self._execute_jp(target, immediate)
+
+        elif instr_type == InstructionType.JP_HL:
+            self._execute_jp_hl()
+
+        elif instr_type == InstructionType.JR:
+            self._execute_jr(target, immediate)
+
+        elif instr_type == InstructionType.CALL:
+            self._execute_call(target, immediate)
+
+        elif instr_type == InstructionType.RET:
+            self._execute_ret(target)
+
+        # Rotates/Shifts
+        elif instr_type == InstructionType.RLCA:
+            self._execute_rlca()
+
+        elif instr_type == InstructionType.RLA:
+            self._execute_rla()
+
+        elif instr_type == InstructionType.RRCA:
+            self._execute_rrca()
+
+        elif instr_type == InstructionType.RRA:
+            self._execute_rra()
+
+        # 16-bit arithmetic
+        elif instr_type == InstructionType.INC_16:
+            self._execute_inc_16(target)
+
+        elif instr_type == InstructionType.DEC_16:
+            self._execute_dec_16(target)
+
+        elif instr_type == InstructionType.ADD_HL:
+            self._execute_add_hl(target)
+
+        # More LD variants
+        elif instr_type == InstructionType.LDI:
+            self._execute_ldi(target, immediate)
+
+        elif instr_type == InstructionType.LDD:
+            self._execute_ldd(target, immediate)
+
+        elif instr_type == InstructionType.LDH:
+            self._execute_ldh(target, immediate)
+
+        elif instr_type == InstructionType.LD_ADDR:
+            self._execute_ld_addr(target, immediate)
+
+        elif instr_type == InstructionType.LD_NN_SP:
+            self._execute_ld_nn_sp(target)
+
+        elif instr_type == InstructionType.LD_HL_SP_N:
+            self._execute_ld_hl_sp_n(target)
+
+        elif instr_type == InstructionType.LD_SP_HL:
+            self._execute_ld_sp_hl()
+
+        # ADC/SBC
+        elif instr_type == InstructionType.ADC:
+            self._execute_adc(target, immediate)
+
+        elif instr_type == InstructionType.SBC:
+            self._execute_sbc(target, immediate)
+
+        # RETI/RST
+        elif instr_type == InstructionType.RETI:
+            self._execute_reti()
+
+        elif instr_type == InstructionType.RST:
+            self._execute_rst(target)
+
+        # CB-prefixed instructions
+        elif instr_type == InstructionType.RLC:
+            self._execute_rlc(target)
+
+        elif instr_type == InstructionType.RRC:
+            self._execute_rrc(target)
+
+        elif instr_type == InstructionType.RL:
+            self._execute_rl(target)
+
+        elif instr_type == InstructionType.RR:
+            self._execute_rr(target)
+
+        elif instr_type == InstructionType.SLA:
+            self._execute_sla(target)
+
+        elif instr_type == InstructionType.SRA:
+            self._execute_sra(target)
+
+        elif instr_type == InstructionType.SRL:
+            self._execute_srl(target)
+
+        elif instr_type == InstructionType.SWAP:
+            self._execute_swap(target)
+
+        elif instr_type == InstructionType.BIT:
+            self._execute_bit(target, immediate)
+
+        elif instr_type == InstructionType.RES:
+            self._execute_res(target, immediate)
+
+        elif instr_type == InstructionType.SET:
+            self._execute_set(target, immediate)
 
         else:
             raise NotImplementedError(f"Instruction {instr_type} not implemented")

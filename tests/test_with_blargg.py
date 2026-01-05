@@ -9,7 +9,7 @@ check the screen buffer or run for a set number of cycles.
 from src.cpu import CPU
 from src.memory import Memory
 
-def run_test_rom(rom_path, max_cycles=10_000_000):
+def run_test_rom(rom_path, max_cycles=30_000_000):
     """
     Run a test ROM and check for pass/fail
     
@@ -25,7 +25,7 @@ def run_test_rom(rom_path, max_cycles=10_000_000):
     try:
         cpu.memory.load_rom_file(rom_path)
     except FileNotFoundError:
-        print(f"✗ File not found: {rom_path}")
+        print(f"[FAIL] File not found: {rom_path}")
         print("  Run download_test_roms.py first")
         return False
     
@@ -33,20 +33,20 @@ def run_test_rom(rom_path, max_cycles=10_000_000):
     
     try:
         cpu.run_until(max_cycles)
-        print(f"✓ Completed {cpu.total_cycles:,} cycles without crashing")
-        
+        print(f"[PASS] Completed {cpu.total_cycles:,} cycles without crashing")
+
         # TODO: Check serial output for "Passed" message
         # For now, just check it didn't crash
         return True
-        
+
     except NotImplementedError as e:
-        print(f"✗ Unimplemented instruction: {e}")
+        print(f"[FAIL] Unimplemented instruction: {e}")
         print(f"  PC: 0x{cpu.registers._pc:04X}")
         print(f"  Cycles: {cpu.total_cycles:,}")
         return False
-    
+
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -66,7 +66,7 @@ def run_all_tests():
     print("SUMMARY")
     print(f"{'='*50}")
     for rom, passed in results.items():
-        status = "✓ PASS" if passed else "✗ FAIL"
+        status = "[PASS]" if passed else "[FAIL]"
         print(f"{status}: {rom}")
 
 if __name__ == '__main__':

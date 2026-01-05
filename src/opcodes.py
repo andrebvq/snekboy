@@ -19,28 +19,98 @@ OPCODES = {
     0x2E: ["LD L,n", 2, 8, (0,0,0,0)],    # Load immediate into L
     0x3E: ["LD A,n", 2, 8, (0,0,0,0)],    # Load immediate into A
     
-    # Register to register loads
-    0x7F: ["LD A,A", 1, 4, (0,0,0,0)],
+    # Register to register loads (0x40-0x7F)
+    # LD B,r
+    0x40: ["LD B,B", 1, 4, (0,0,0,0)],
+    0x41: ["LD B,C", 1, 4, (0,0,0,0)],
+    0x42: ["LD B,D", 1, 4, (0,0,0,0)],
+    0x43: ["LD B,E", 1, 4, (0,0,0,0)],
+    0x44: ["LD B,H", 1, 4, (0,0,0,0)],
+    0x45: ["LD B,L", 1, 4, (0,0,0,0)],
+    0x46: ["LD B,(HL)", 1, 8, (0,0,0,0)],
+    0x47: ["LD B,A", 1, 4, (0,0,0,0)],
+
+    # LD C,r
+    0x48: ["LD C,B", 1, 4, (0,0,0,0)],
+    0x49: ["LD C,C", 1, 4, (0,0,0,0)],
+    0x4A: ["LD C,D", 1, 4, (0,0,0,0)],
+    0x4B: ["LD C,E", 1, 4, (0,0,0,0)],
+    0x4C: ["LD C,H", 1, 4, (0,0,0,0)],
+    0x4D: ["LD C,L", 1, 4, (0,0,0,0)],
+    0x4E: ["LD C,(HL)", 1, 8, (0,0,0,0)],
+    0x4F: ["LD C,A", 1, 4, (0,0,0,0)],
+
+    # LD D,r
+    0x50: ["LD D,B", 1, 4, (0,0,0,0)],
+    0x51: ["LD D,C", 1, 4, (0,0,0,0)],
+    0x52: ["LD D,D", 1, 4, (0,0,0,0)],
+    0x53: ["LD D,E", 1, 4, (0,0,0,0)],
+    0x54: ["LD D,H", 1, 4, (0,0,0,0)],
+    0x55: ["LD D,L", 1, 4, (0,0,0,0)],
+    0x56: ["LD D,(HL)", 1, 8, (0,0,0,0)],
+    0x57: ["LD D,A", 1, 4, (0,0,0,0)],
+
+    # LD E,r
+    0x58: ["LD E,B", 1, 4, (0,0,0,0)],
+    0x59: ["LD E,C", 1, 4, (0,0,0,0)],
+    0x5A: ["LD E,D", 1, 4, (0,0,0,0)],
+    0x5B: ["LD E,E", 1, 4, (0,0,0,0)],
+    0x5C: ["LD E,H", 1, 4, (0,0,0,0)],
+    0x5D: ["LD E,L", 1, 4, (0,0,0,0)],
+    0x5E: ["LD E,(HL)", 1, 8, (0,0,0,0)],
+    0x5F: ["LD E,A", 1, 4, (0,0,0,0)],
+
+    # LD H,r
+    0x60: ["LD H,B", 1, 4, (0,0,0,0)],
+    0x61: ["LD H,C", 1, 4, (0,0,0,0)],
+    0x62: ["LD H,D", 1, 4, (0,0,0,0)],
+    0x63: ["LD H,E", 1, 4, (0,0,0,0)],
+    0x64: ["LD H,H", 1, 4, (0,0,0,0)],
+    0x65: ["LD H,L", 1, 4, (0,0,0,0)],
+    0x66: ["LD H,(HL)", 1, 8, (0,0,0,0)],
+    0x67: ["LD H,A", 1, 4, (0,0,0,0)],
+
+    # LD L,r
+    0x68: ["LD L,B", 1, 4, (0,0,0,0)],
+    0x69: ["LD L,C", 1, 4, (0,0,0,0)],
+    0x6A: ["LD L,D", 1, 4, (0,0,0,0)],
+    0x6B: ["LD L,E", 1, 4, (0,0,0,0)],
+    0x6C: ["LD L,H", 1, 4, (0,0,0,0)],
+    0x6D: ["LD L,L", 1, 4, (0,0,0,0)],
+    0x6E: ["LD L,(HL)", 1, 8, (0,0,0,0)],
+    0x6F: ["LD L,A", 1, 4, (0,0,0,0)],
+
+    # LD (HL),r
+    0x70: ["LD (HL),B", 1, 8, (0,0,0,0)],
+    0x71: ["LD (HL),C", 1, 8, (0,0,0,0)],
+    0x72: ["LD (HL),D", 1, 8, (0,0,0,0)],
+    0x73: ["LD (HL),E", 1, 8, (0,0,0,0)],
+    0x74: ["LD (HL),H", 1, 8, (0,0,0,0)],
+    0x75: ["LD (HL),L", 1, 8, (0,0,0,0)],
+    0x36: ["LD (HL),n", 2, 12, (0,0,0,0)],
+    0x77: ["LD (HL),A", 1, 8, (0,0,0,0)],
+
+    # LD A,r
     0x78: ["LD A,B", 1, 4, (0,0,0,0)],
     0x79: ["LD A,C", 1, 4, (0,0,0,0)],
     0x7A: ["LD A,D", 1, 4, (0,0,0,0)],
     0x7B: ["LD A,E", 1, 4, (0,0,0,0)],
     0x7C: ["LD A,H", 1, 4, (0,0,0,0)],
     0x7D: ["LD A,L", 1, 4, (0,0,0,0)],
+    0x7E: ["LD A,(HL)", 1, 8, (0,0,0,0)],
+    0x7F: ["LD A,A", 1, 4, (0,0,0,0)],
     
     # 16-bit loads
     0x01: ["LD BC,nn", 3, 12, (0,0,0,0)],  # Load 16-bit immediate into BC
     0x11: ["LD DE,nn", 3, 12, (0,0,0,0)],  # Load 16-bit immediate into DE
     0x21: ["LD HL,nn", 3, 12, (0,0,0,0)],  # Load 16-bit immediate into HL
     0x31: ["LD SP,nn", 3, 12, (0,0,0,0)],  # Load 16-bit immediate into SP
-    
-    # Load from/to memory
+
+    # Load from/to memory (special addressing modes)
     0x02: ["LD (BC),A", 1, 8, (0,0,0,0)],
     0x12: ["LD (DE),A", 1, 8, (0,0,0,0)],
-    0x77: ["LD (HL),A", 1, 8, (0,0,0,0)],
     0x0A: ["LD A,(BC)", 1, 8, (0,0,0,0)],
     0x1A: ["LD A,(DE)", 1, 8, (0,0,0,0)],
-    0x7E: ["LD A,(HL)", 1, 8, (0,0,0,0)],
     
     # Stack operations
     0xC5: ["PUSH BC", 1, 16, (0,0,0,0)],
@@ -81,6 +151,7 @@ OPCODES = {
     0x1C: ["INC E", 1, 4, (1,0,1,0)],
     0x24: ["INC H", 1, 4, (1,0,1,0)],
     0x2C: ["INC L", 1, 4, (1,0,1,0)],
+    0x34: ["INC (HL)", 1, 12, (1,0,1,0)],
     0x3C: ["INC A", 1, 4, (1,0,1,0)],
     0x05: ["DEC B", 1, 4, (1,1,1,0)],
     0x0D: ["DEC C", 1, 4, (1,1,1,0)],
@@ -88,6 +159,7 @@ OPCODES = {
     0x1D: ["DEC E", 1, 4, (1,1,1,0)],
     0x25: ["DEC H", 1, 4, (1,1,1,0)],
     0x2D: ["DEC L", 1, 4, (1,1,1,0)],
+    0x35: ["DEC (HL)", 1, 12, (1,1,1,0)],
     0x3D: ["DEC A", 1, 4, (1,1,1,0)],
     
     # Jump instructions
@@ -96,6 +168,7 @@ OPCODES = {
     0xCA: ["JP Z,nn", 3, 16, (0,0,0,0)],   # Jump if zero
     0xD2: ["JP NC,nn", 3, 16, (0,0,0,0)],  # Jump if no carry
     0xDA: ["JP C,nn", 3, 16, (0,0,0,0)],   # Jump if carry
+    0xE9: ["JP (HL)", 1, 4, (0,0,0,0)],    # Jump to address in HL
     0x18: ["JR n", 2, 12, (0,0,0,0)],      # Relative jump
     0x20: ["JR NZ,n", 2, 12, (0,0,0,0)],   # Relative jump if not zero
     0x28: ["JR Z,n", 2, 12, (0,0,0,0)],    # Relative jump if zero
@@ -178,12 +251,80 @@ OPCODES = {
     0x37: ["SCF", 1, 4, (0,0,0,1)],        # Set carry flag
     0x3F: ["CCF", 1, 4, (0,0,0,1)],        # Complement carry flag
 
+    # More LD variants
+    0x22: ["LDI (HL),A", 1, 8, (0,0,0,0)],   # LD (HL),A then INC HL
+    0x2A: ["LDI A,(HL)", 1, 8, (0,0,0,0)],   # LD A,(HL) then INC HL
+    0x32: ["LDD (HL),A", 1, 8, (0,0,0,0)],   # LD (HL),A then DEC HL
+    0x3A: ["LDD A,(HL)", 1, 8, (0,0,0,0)],   # LD A,(HL) then DEC HL
+
+    0xE0: ["LDH (n),A", 2, 12, (0,0,0,0)],   # LD (0xFF00+n),A
+    0xF0: ["LDH A,(n)", 2, 12, (0,0,0,0)],   # LD A,(0xFF00+n)
+    0xE2: ["LDH (C),A", 1, 8, (0,0,0,0)],    # LD (0xFF00+C),A
+    0xF2: ["LDH A,(C)", 1, 8, (0,0,0,0)],    # LD A,(0xFF00+C)
+
+    0xEA: ["LD (nn),A", 3, 16, (0,0,0,0)],   # LD (nn),A
+    0xFA: ["LD A,(nn)", 3, 16, (0,0,0,0)],   # LD A,(nn)
+
+    0x08: ["LD (nn),SP", 3, 20, (0,0,0,0)],  # LD (nn),SP
+    0xF8: ["LD HL,SP+n", 2, 12, (0,0,1,1)],  # LD HL,SP+n
+    0xF9: ["LD SP,HL", 1, 8, (0,0,0,0)],     # LD SP,HL
+
+    # 16-bit INC/DEC
+    0x03: ["INC BC", 1, 8, (0,0,0,0)],
+    0x13: ["INC DE", 1, 8, (0,0,0,0)],
+    0x23: ["INC HL", 1, 8, (0,0,0,0)],
+    0x33: ["INC SP", 1, 8, (0,0,0,0)],
+    0x0B: ["DEC BC", 1, 8, (0,0,0,0)],
+    0x1B: ["DEC DE", 1, 8, (0,0,0,0)],
+    0x2B: ["DEC HL", 1, 8, (0,0,0,0)],
+    0x3B: ["DEC SP", 1, 8, (0,0,0,0)],
+
+    # 16-bit ADD
+    0x09: ["ADD HL,BC", 1, 8, (0,0,1,1)],
+    0x19: ["ADD HL,DE", 1, 8, (0,0,1,1)],
+    0x29: ["ADD HL,HL", 1, 8, (0,0,1,1)],
+    0x39: ["ADD HL,SP", 1, 8, (0,0,1,1)],
+
+    # ADC (Add with carry)
+    0x88: ["ADC A,B", 1, 4, (1,0,1,1)],
+    0x89: ["ADC A,C", 1, 4, (1,0,1,1)],
+    0x8A: ["ADC A,D", 1, 4, (1,0,1,1)],
+    0x8B: ["ADC A,E", 1, 4, (1,0,1,1)],
+    0x8C: ["ADC A,H", 1, 4, (1,0,1,1)],
+    0x8D: ["ADC A,L", 1, 4, (1,0,1,1)],
+    0x8E: ["ADC A,(HL)", 1, 8, (1,0,1,1)],
+    0x8F: ["ADC A,A", 1, 4, (1,0,1,1)],
+    0xCE: ["ADC A,n", 2, 8, (1,0,1,1)],
+
+    # SBC (Subtract with carry)
+    0x98: ["SBC A,B", 1, 4, (1,1,1,1)],
+    0x99: ["SBC A,C", 1, 4, (1,1,1,1)],
+    0x9A: ["SBC A,D", 1, 4, (1,1,1,1)],
+    0x9B: ["SBC A,E", 1, 4, (1,1,1,1)],
+    0x9C: ["SBC A,H", 1, 4, (1,1,1,1)],
+    0x9D: ["SBC A,L", 1, 4, (1,1,1,1)],
+    0x9E: ["SBC A,(HL)", 1, 8, (1,1,1,1)],
+    0x9F: ["SBC A,A", 1, 4, (1,1,1,1)],
+    0xDE: ["SBC A,n", 2, 8, (1,1,1,1)],
+
     # Control
     0x00: ["NOP", 1, 4, (0,0,0,0)],        # No operation
     0x76: ["HALT", 1, 4, (0,0,0,0)],       # Halt until interrupt
     0x10: ["STOP", 2, 4, (0,0,0,0)],       # Stop processor
     0xF3: ["DI", 1, 4, (0,0,0,0)],         # Disable interrupts
     0xFB: ["EI", 1, 4, (0,0,0,0)],         # Enable interrupts
+    0xD9: ["RETI", 1, 16, (0,0,0,0)],      # Return from interrupt
+    0xCB: ["CB PREFIX", 2, 8, (0,0,0,0)],  # CB prefix for extended instructions
+
+    # RST (Restart)
+    0xC7: ["RST 00H", 1, 16, (0,0,0,0)],
+    0xCF: ["RST 08H", 1, 16, (0,0,0,0)],
+    0xD7: ["RST 10H", 1, 16, (0,0,0,0)],
+    0xDF: ["RST 18H", 1, 16, (0,0,0,0)],
+    0xE7: ["RST 20H", 1, 16, (0,0,0,0)],
+    0xEF: ["RST 28H", 1, 16, (0,0,0,0)],
+    0xF7: ["RST 30H", 1, 16, (0,0,0,0)],
+    0xFF: ["RST 38H", 1, 16, (0,0,0,0)],
 }
 
 # CB-prefixed instructions (accessed via 0xCB prefix)
