@@ -52,6 +52,7 @@ class InstructionType(Enum):
     LD_SP_HL = auto()
     LD_HL_SP_N = auto()
     LD_NN_SP = auto()
+    ADD_SP_N = auto()
     # CB-prefixed instructions
     RLC = auto()    # Rotate Left Circular
     RRC = auto()    # Rotate Right Circular
@@ -381,6 +382,10 @@ def decode_instruction_params(opcode, fetch_byte_func, fetch_word_func):
     if opcode == 0x08:  # LD (nn),SP
         address = fetch_word_func()
         return (InstructionType.LD_NN_SP, address, None)
+
+    if opcode == 0xE8:  # ADD SP,n
+        offset = fetch_byte_func()
+        return (InstructionType.ADD_SP_N, offset, None)
 
     if opcode == 0xF8:  # LD HL,SP+n
         offset = fetch_byte_func()

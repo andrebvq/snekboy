@@ -50,7 +50,9 @@ class Flags:
         return self._bits.value
 
     def from_byte(self, value: int) -> None:
-        self._bits = BitField(validate_byte(value))
+        # Game Boy F register: only upper 4 bits are used (bits 7-4)
+        # Lower 4 bits (3-0) are always 0
+        self._bits = BitField(validate_byte(value) & 0xF0)
 
     def __str__(self) -> str:
         return (f"Z:{int(self.zero)} "

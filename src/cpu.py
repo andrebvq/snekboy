@@ -35,9 +35,21 @@ class Instruction:
 class CPU(InstructionImplementations):
     def __init__(self, memory = None):
         self.registers = Register()
-        self.memory = memory if memory else Memory()
+
+        # Timer state - must be initialized before Memory
+        # The Game Boy has an internal 16-bit counter that increments every T-cycle (M-cycle = 4 T-cycles)
+        self._system_counter = 0  # Internal 16-bit counter
+        self._prev_timer_bit = False  # Previous value of selected timer bit for edge detection
+        self._timer_overflow_cycles = 0  # Delay counter for TMA reload (0 = no overflow, 1-4 = in delay)
+
+        # Create memory with reference to this CPU
+        self.memory = memory if memory else Memory(cpu=self)
+
         self.total_cycles = 0
         self.halted = False
+        self.ime = False  # Interrupt Master Enable flag
+        self._ei_pending = False  # EI enables interrupts AFTER next instruction
+
         self._initialize_state()
 
     def _initialize_state(self):
@@ -269,10 +281,140 @@ class CPU(InstructionImplementations):
             cycles=cycles
         )
     
+    def _check_interrupts(self) -> bool:
+        """Check if any interrupts should be serviced. Returns True if interrupt was handled."""
+        if not self.ime:
+            return False
+
+        # Read IE and IF registers
+        ie = self.memory.read_byte(0xFFFF)  # Interrupt Enable
+        if_flags = self.memory.read_byte(0xFF0F)  # Interrupt Flags
+
+        # Check which interrupts are both enabled and requested
+        triggered = ie & if_flags & 0x1F  # Only bits 0-4 are used
+
+        if triggered == 0:
+            return False
+
+        # Find highest priority interrupt (lowest bit number)
+        # Priority: VBlank (0) > LCD (1) > Timer (2) > Serial (3) > Joypad (4)
+        for bit in range(5):
+            if triggered & (1 << bit):
+                # Service this interrupt
+                self._service_interrupt(bit)
+                return True
+
+        return False
+
+    def _service_interrupt(self, interrupt_bit: int) -> None:
+        """Service an interrupt by jumping to its vector"""
+        # Disable IME
+        self.ime = False
+
+        # Clear the interrupt flag
+        if_flags = self.memory.read_byte(0xFF0F)
+        if_flags &= ~(1 << interrupt_bit)
+        self.memory.write_byte(0xFF0F, if_flags)
+
+        # Push PC to stack
+        self.registers._sp = validate_word(self.registers._sp - 1)
+        self.memory.write_byte(self.registers._sp, (self.registers._pc >> 8) & 0xFF)
+        self.registers._sp = validate_word(self.registers._sp - 1)
+        self.memory.write_byte(self.registers._sp, self.registers._pc & 0xFF)
+
+        # Jump to interrupt vector
+        interrupt_vectors = [0x0040, 0x0048, 0x0050, 0x0058, 0x0060]
+        self.registers._pc = interrupt_vectors[interrupt_bit]
+
+    def _update_timers(self, cycles: int) -> None:
+        """
+        Update timer registers with cycle-accurate behavior.
+
+        The Game Boy has a 16-bit system counter that increments every T-cycle.
+        - DIV is bits 13-6 of this counter (visible at 0xFF04)
+        - TIMA increments on falling edge of a selected bit
+        - TAC selects which bit: bit 9 (256 M-cycles), bit 3 (4 M-cycles), bit 5 (16 M-cycles), or bit 7 (64 M-cycles)
+        """
+        # Process each M-cycle individually for accuracy
+        # Note: 1 M-cycle = 4 T-cycles
+        for _ in range(cycles):
+            # Handle timer overflow delay (1 M-cycle delay before TMA loads)
+            if self._timer_overflow_cycles > 0:
+                self._timer_overflow_cycles -= 1
+                if self._timer_overflow_cycles == 0:
+                    # Reload TIMA from TMA and request interrupt
+                    tma = self.memory.read_byte(0xFF06)
+                    self.memory.write_byte(0xFF05, tma)
+
+                    # Set timer interrupt flag
+                    if_flags = self.memory.read_byte(0xFF0F)
+                    if_flags |= 0x04
+                    self.memory.write_byte(0xFF0F, if_flags)
+
+            # Increment system counter (4 T-cycles per M-cycle)
+            prev_counter = self._system_counter
+            self._system_counter = (self._system_counter + 4) & 0xFFFF
+
+            # Update DIV register (bits 13-6 of system counter, displayed as bits 7-0 of DIV)
+            # DIV should increment every 256 T-cycles (64 M-cycles)
+            # System counter bits: [15:14][13:6][5:0]
+            #                              ^^^^^^ these 8 bits are DIV
+            # So DIV = (system_counter >> 6) & 0xFF, but we need to verify this gives us
+            # one increment per 64 M-cycles
+            # After 64 M-cycles: system_counter = 256 (0x100)
+            # 0x100 >> 6 = 4, but we want 1!
+            # The issue is the bit mapping. Let me use a simpler approach:
+            # DIV increments when system_counter crosses a 256 T-cycle boundary
+            # So DIV = system_counter / 256
+            self.memory._data[0xFF04] = (self._system_counter // 256) & 0xFF
+
+            # Check if timer is enabled
+            tac = self.memory.read_byte(0xFF07)
+            if tac & 0x04:  # Bit 2 = timer enable
+                # Select which bit to monitor based on TAC bits 0-1
+                freq_bits = tac & 0x03
+                # Bit positions: [9, 3, 5, 7] for frequencies [256, 4, 16, 64] M-cycles
+                bit_positions = [9, 3, 5, 7]
+                selected_bit_pos = bit_positions[freq_bits]
+
+                # Get current and previous bit values
+                prev_bit = (prev_counter >> selected_bit_pos) & 1
+                curr_bit = (self._system_counter >> selected_bit_pos) & 1
+
+                # Detect falling edge (1 -> 0 transition)
+                if prev_bit == 1 and curr_bit == 0:
+                    # Increment TIMA
+                    tima = self.memory.read_byte(0xFF05)
+                    tima += 1
+
+                    if tima > 0xFF:
+                        # Overflow detected - set TIMA to 0 and start delay
+                        self.memory.write_byte(0xFF05, 0x00)
+                        self._timer_overflow_cycles = 1  # 1 M-cycle delay
+                    else:
+                        self.memory.write_byte(0xFF05, tima)
+
     def step(self) -> int:
         """Execute one instruction"""
+        # When halted, CPU wakes up if any interrupt is pending (even with IME=0)
         if self.halted:
-            return 4
+            ie = self.memory.read_byte(0xFFFF)
+            if_flags = self.memory.read_byte(0xFF0F)
+            if ie & if_flags & 0x1F:
+                self.halted = False  # Wake from halt
+
+        # Check for interrupts (only services them if IME=1)
+        if self._check_interrupts():
+            cycles = 20  # Interrupt handling takes ~5 cycles (simplified)
+            self._update_timers(cycles)
+            self.total_cycles += cycles
+            return cycles
+
+        if self.halted:
+            cycles = 4
+            self._update_timers(cycles)
+            self.total_cycles += cycles
+            return cycles
 
         # FETCH
         opcode = self.fetch_byte()
@@ -283,7 +425,13 @@ class CPU(InstructionImplementations):
         # EXECUTE
         self.execute_instruction(instr_type, target, immediate)
 
+        # Handle EI delay: enable interrupts AFTER the instruction following EI
+        if self._ei_pending:
+            self.ime = True
+            self._ei_pending = False
+
         # UPDATE
+        self._update_timers(cycles)
         self.total_cycles += cycles
 
         return cycles
@@ -379,39 +527,21 @@ class CPU(InstructionImplementations):
     
     # LD doesn't affect flags
     
-    def _execute_add(self, target: Optional[ArithmeticTarget], immediate_value: Optional[int] = None) -> None:
+    def _execute_add(self, target, immediate_value=None) -> None:
         """Execute ADD instruction"""
-        if target is None:
-            return
-        
-        # Get value to add
-        if target == ArithmeticTarget.IMMEDIATE:
-            value_to_add = immediate_value if immediate_value is not None else 0
-        elif target == ArithmeticTarget.HL_INDIRECT:
-            # Read from memory at address HL
-            value_to_add = self.memory.read_byte(self.registers.hl)
-        else:
-            # Register target
-            value_to_add = {
-                ArithmeticTarget.A: self.registers._a,
-                ArithmeticTarget.B: self.registers._b,
-                ArithmeticTarget.C: self.registers._c,
-                ArithmeticTarget.D: self.registers._d,
-                ArithmeticTarget.E: self.registers._e,
-                ArithmeticTarget.H: self.registers._h,
-                ArithmeticTarget.L: self.registers._l,
-            }.get(target, 0)
-        
+        # Use the helper function to get the operand value correctly
+        value_to_add = self._get_operand_value(target, immediate_value)
+
         # Perform addition
         current_a = self.registers._a
         result = current_a + value_to_add
-        
+
         # Set flags
         self.registers.flags.zero = (result & 0xFF) == 0
         self.registers.flags.subtract = False
         self.registers.flags.half_carry = (current_a & 0xF) + (value_to_add & 0xF) > 0xF
         self.registers.flags.carry = result > 0xFF
-        
+
         # Store result
         self.registers._a = validate_byte(result)
 
@@ -547,6 +677,9 @@ class CPU(InstructionImplementations):
 
         elif instr_type == InstructionType.LD_NN_SP:
             self._execute_ld_nn_sp(target)
+
+        elif instr_type == InstructionType.ADD_SP_N:
+            self._execute_add_sp_n(target)
 
         elif instr_type == InstructionType.LD_HL_SP_N:
             self._execute_ld_hl_sp_n(target)

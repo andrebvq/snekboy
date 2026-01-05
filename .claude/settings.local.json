@@ -15,7 +15,8 @@
       "Bash(/c/msys64/ucrt64/bin/python.exe:*)",
       "Bash(PYTHONPATH=. /c/msys64/ucrt64/bin/python.exe:*)",
       "Bash(tee:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(python:*)"
     ]
   }
 }

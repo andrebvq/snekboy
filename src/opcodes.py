@@ -266,6 +266,7 @@ OPCODES = {
     0xFA: ["LD A,(nn)", 3, 16, (0,0,0,0)],   # LD A,(nn)
 
     0x08: ["LD (nn),SP", 3, 20, (0,0,0,0)],  # LD (nn),SP
+    0xE8: ["ADD SP,n", 2, 16, (0,0,1,1)],    # ADD SP,signed byte
     0xF8: ["LD HL,SP+n", 2, 12, (0,0,1,1)],  # LD HL,SP+n
     0xF9: ["LD SP,HL", 1, 8, (0,0,0,0)],     # LD SP,HL
 

@@ -21,12 +21,23 @@ from src.utils import validate_byte, validate_word, MemoryRanges
 class Memory:
     """Game Boy Memory Management Unit"""
 
-    def __init__(self):
+    def __init__(self, cpu=None):
         # 64KB address space (0x0000 to 0xFFFF)
         self._data = bytearray(65536)
 
         # Serial buffer for test ROM output
         self._serial_buffer = 0
+        self._serial_output = []  # Capture all serial output
+
+        # Interrupt registers
+        # IE (0xFFFF) - Interrupt Enable
+        # IF (0xFF0F) - Interrupt Flags
+        # Both are readable/writable, initialized to 0
+        self._data[0xFFFF] = 0x00  # IE register
+        self._data[0xFF0F] = 0x00  # IF register
+
+        # Reference to CPU for timer reset
+        self._cpu = cpu
 
         # Optional: Track read/write for debugging
         self._read_count = 0
@@ -49,22 +60,46 @@ class Memory:
         """Write byte with serial port handling"""
         address = validate_word(address)
         value = validate_byte(value)
-    
+
+        # DIV register (0xFF04) - writing any value resets it to 0 AND the system counter
+        if address == 0xFF04:
+            self._data[address] = 0x00
+            # Reset the CPU's system counter
+            if self._cpu:
+                self._cpu._system_counter = 0
+            return
+
+        # TAC register (0xFF07) - writing resets timer counter
+        # Note: Timer counter reset is handled in CPU, not here
+        # We just store the value normally
+
         # Serial port transfer (test ROM output)
         if address == 0xFF01:
             # Serial data - the character being sent
             self._serial_buffer = value
-    
+            self._data[address] = value
+
         elif address == 0xFF02:
             # Serial control - if bit 7 is set, transfer starts
             if value == 0x81:
                 # Transfer requested
-                char = chr(self._serial_buffer) if 32 <= self._serial_buffer < 127 else '.'
-                print(char, end='', flush=True)  # Print to console
+                self._serial_output.append(self._serial_buffer)
+
+                # Print character (convert newline, tab, etc.)
+                if self._serial_buffer == 0x0A:  # Newline
+                    print()
+                elif self._serial_buffer == 0x0D:  # Carriage return
+                    pass  # Ignore CR, just use LF
+                elif 32 <= self._serial_buffer < 127:  # Printable ASCII
+                    print(chr(self._serial_buffer), end='', flush=True)
+                else:
+                    # Non-printable: show as hex for debugging
+                    print(f'[{self._serial_buffer:02X}]', end='', flush=True)
+
                 self._data[0xFF01] = 0x00  # Clear data
                 self._data[0xFF02] = 0x01  # Mark transfer complete
                 return
-    
+
         self._data[address] = value
     
     """
@@ -136,6 +171,11 @@ class Memory:
             'writes': self._write_count,
             'total_accesses': self._read_count + self._write_count
         }
+
+    def get_serial_output(self) -> str:
+        """Get all serial output as a string"""
+        return ''.join(chr(b) if 32 <= b < 127 or b in (0x0A, 0x0D) else f'[{b:02X}]'
+                       for b in self._serial_output)
     
     def reset(self) -> None:
         """Clear all memory"""

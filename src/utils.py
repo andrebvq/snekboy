@@ -128,3 +128,12 @@ class MemoryRanges:
     HRAM_START = 0xFF80
     HRAM_END = 0xFFFE
     IE_REGISTER = 0xFFFF
+    IF_REGISTER = 0xFF0F
+
+class InterruptBits:
+    """Interrupt bit positions for IE and IF registers"""
+    VBLANK = 0   # Bit 0: V-Blank
+    LCD_STAT = 1 # Bit 1: LCD STAT
+    TIMER = 2    # Bit 2: Timer
+    SERIAL = 3   # Bit 3: Serial
+    JOYPAD = 4   # Bit 4: Joypad

@@ -9,35 +9,56 @@ check the screen buffer or run for a set number of cycles.
 from src.cpu import CPU
 from src.memory import Memory
 
-def run_test_rom(rom_path, max_cycles=30_000_000):
+def run_test_rom(rom_path, max_cycles=30_000_000, debug=False):
     """
     Run a test ROM and check for pass/fail
-    
+
     Note: Full implementation requires serial port emulation
     For now, just verify it doesn't crash
     """
     print(f"\n{'='*50}")
     print(f"Running: {rom_path}")
     print(f"{'='*50}")
-    
+
     cpu = CPU()
-    
+
     try:
         cpu.memory.load_rom_file(rom_path)
     except FileNotFoundError:
         print(f"[FAIL] File not found: {rom_path}")
         print("  Run download_test_roms.py first")
         return False
-    
+
     print(f"ROM loaded, running for {max_cycles:,} cycles...")
+
+    if debug:
+        last_pc = 0
+        same_pc_count = 0
     
     try:
         cpu.run_until(max_cycles)
-        print(f"[PASS] Completed {cpu.total_cycles:,} cycles without crashing")
+        print(f"\n[DONE] Completed {cpu.total_cycles:,} cycles")
+        print(f"  Final PC: 0x{cpu.registers._pc:04X}")
+        print(f"  Halted: {cpu.halted}")
 
-        # TODO: Check serial output for "Passed" message
-        # For now, just check it didn't crash
-        return True
+        # Get full serial output
+        serial_output = cpu.memory.get_serial_output()
+        print(f"\n{'='*50}")
+        print("SERIAL OUTPUT:")
+        print(f"{'='*50}")
+        print(serial_output)
+        print(f"{'='*50}")
+
+        # Check if test passed
+        if "Passed" in serial_output:
+            print("\n[PASS] Test passed!")
+            return True
+        elif "Failed" in serial_output:
+            print("\n[FAIL] Test failed - check output above")
+            return False
+        else:
+            print("\n[UNKNOWN] Test completed but result unclear")
+            return False
 
     except NotImplementedError as e:
         print(f"[FAIL] Unimplemented instruction: {e}")
