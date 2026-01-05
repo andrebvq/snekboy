@@ -5,7 +5,7 @@ This module contains the actual execution logic for all instructions.
 Separated from cpu.py for better organization.
 """
 
-from utils import validate_byte, validate_word
+from src.utils import validate_byte, validate_word
 
 
 class InstructionImplementations:

@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from multiprocessing.util import info
 import opcode
 from typing import Optional
 from src.registers import Register
@@ -6,6 +7,8 @@ from src.utils import validate_byte, validate_word
 from src.memory import Memory
 from dataclasses import dataclass
 from src.opcodes import OPCODES, CB_OPCODES
+from src.instructions_impl import InstructionImplementations
+from src.cpu_decoder import InstructionType, decode_instruction_params
 
 class ArithmeticTarget(Enum):
     A = auto()
@@ -42,8 +45,8 @@ class Instruction:
     length: int = 1  # Instruction length in bytes
     cycles: int = 4  # Clock cycles
 
-class CPU:
-    def __init__(self, memory: Optional[Memory] = None):
+class CPU(InstructionImplementations):
+    def __init__(self, memory = None):
         self.registers = Register()
         self.memory = memory if memory else Memory()
         self.total_cycles = 0
@@ -79,32 +82,28 @@ class CPU:
         self.registers._pc = validate_word(self.registers._pc + 2)
         return value
     
-    def decode(self, opcode: int) -> Instruction:
-        """Decode opcode byte into Instruction"""
-        
-        # Handle CB-prefixed instructions
-        if opcode == 0xCB:
-            cb_opcode = self.fetch_byte()
-            if cb_opcode in CB_OPCODES:
-                info = CB_OPCODES[cb_opcode]
-                # TODO: Implement CB instruction decoding
-                return Instruction(
-                    type=InstructionType.NOP,  # Placeholder
-                    opcode=cb_opcode,
-                    length=info[1],
-                    cycles=info[2]
-                )
-        
-        # Regular opcodes
+    def decode(self, opcode: int):
+        """Decode opcode into instruction parameters"""
         if opcode not in OPCODES:
             raise ValueError(f"Unknown opcode: 0x{opcode:02X} at PC=0x{self.registers._pc - 1:04X}")
-        
+
+        # Get opcode info
         info = OPCODES[opcode]
         name, length, cycles, flags = info
-        
-        # Decode based on opcode patterns
-        instruction = self._decode_opcode(opcode, name, length, cycles)
-        return instruction
+
+        # Decode parameters
+        instr_type, target, immediate = decode_instruction_params(
+            opcode,
+            self.fetch_byte,
+            self.fetch_word
+        )
+
+        if instr_type is None:
+            raise NotImplementedError(
+                f"Opcode 0x{opcode:02X} ({name}) not yet implemented at PC=0x{self.registers._pc - 1:04X}"
+        )
+
+        return (instr_type, target, immediate, cycles)
     
     def _decode_opcode(self, opcode: int, name: str, length: int, cycles: int) -> Instruction:
         """Decode specific opcode into Instruction object"""
@@ -276,23 +275,23 @@ class CPU:
         )
     
     def step(self) -> int:
-        """Execute one instruction and return cycles used"""
+        """Execute one instruction"""
         if self.halted:
-            return 4  # HALT uses 4 cycles per step
-        
+            return 4
+
         # FETCH
         opcode = self.fetch_byte()
-        
+
         # DECODE
-        instruction = self.decode(opcode)
-        
+        instr_type, target, immediate, cycles = self.decode(opcode)
+
         # EXECUTE
-        self.execute(instruction)
-        
+        self.execute_instruction(instr_type, target, immediate)
+
         # UPDATE
-        self.total_cycles += instruction.cycles
-        
-        return instruction.cycles
+        self.total_cycles += cycles
+
+        return cycles
     
     def run_until(self, max_cycles: int) -> None:
         """Run CPU for a specified number of cycles"""
@@ -420,6 +419,87 @@ class CPU:
         
         # Store result
         self.registers._a = validate_byte(result)
+
+    def _execute_sub(self, target, immediate_value=None) -> None:
+        """Execute SUB instruction"""
+        value = self._get_operand_value(target, immediate_value)
+
+        current_a = self.registers._a
+        result = current_a - value
+
+        # Set flags
+        self.registers.flags.zero = (result & 0xFF) == 0
+        self.registers.flags.subtract = True  # Different from ADD
+        self.registers.flags.half_carry = (current_a & 0xF) < (value & 0xF)
+        self.registers.flags.carry = result < 0
+
+        # Store result
+        self.registers._a = validate_byte(result)
+
+    def execute_instruction(self, instr_type, target, immediate):
+        """Dispatch instruction to appropriate handler"""
+
+        if instr_type == InstructionType.NOP:
+            pass
+
+        elif instr_type == InstructionType.HALT:
+            self.halted = True
+        
+        elif instr_type == InstructionType.STOP:
+            self.halted = True  # Similar to HALT for now
+
+        elif instr_type == InstructionType.ADD:
+            self._execute_add(target, immediate)
+        
+        elif instr_type == InstructionType.SUB:
+            self._execute_sub(target, immediate)
+
+        elif instr_type == InstructionType.AND:
+            self._execute_and(target, immediate)
+
+        elif instr_type == InstructionType.OR:
+            self._execute_or(target, immediate)
+
+        elif instr_type == InstructionType.XOR:
+            self._execute_xor(target, immediate)
+
+        elif instr_type == InstructionType.CP:
+            self._execute_cp(target, immediate)
+        elif instr_type == InstructionType.INC:
+            self._execute_inc(target)
+
+        elif instr_type == InstructionType.DEC:
+            self._execute_dec(target)
+        
+        elif instr_type == InstructionType.LD:
+            self._execute_ld(target, immediate)
+
+        elif instr_type == InstructionType.PUSH:
+            self._execute_push(target)
+
+        elif instr_type == InstructionType.POP:
+            self._execute_pop(target)
+
+        elif instr_type == InstructionType.SCF:
+            self._execute_scf()
+
+        elif instr_type == InstructionType.CCF:
+            self._execute_ccf()
+
+        elif instr_type == InstructionType.CPL:
+            self._execute_cpl()
+
+        elif instr_type == InstructionType.DAA:
+            self._execute_daa()
+
+        elif instr_type == InstructionType.DI:
+            self._execute_di()
+
+        elif instr_type == InstructionType.EI:
+            self._execute_ei()
+
+        else:
+            raise NotImplementedError(f"Instruction {instr_type} not implemented")
 
     def __str__(self) -> str:
         return (f"A: {self.registers._a:02X} "
