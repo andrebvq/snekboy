@@ -1,0 +1,57 @@
+======================================================================
+BLARGG TEST ROM SUITE
+======================================================================
+Running 4 tests...
+
+======================================================================
+Running: test_roms/halt_bug.gb
+======================================================================
+Loaded 32768 bytes of ROM at address 0x0000
+ROM loaded, running for up to 10,000,000 cycles...
+
+[TIMEOUT] Infinite loop detected at PC=0xC41F
+
+[DONE] Completed 301,148 cycles
+  Final PC: 0xC41F
+  Halted: False
+
+[UNKNOWN] Test completed but result unclear
+
+======================================================================
+Running: test_roms/cpu_instrs.gb
+======================================================================
+Loaded 65536 bytes of ROM at address 0x0000
+ROM loaded, running for up to 50,000,000 cycles...
+
+[TIMEOUT] Infinite loop detected at PC=0x0784
+
+[DONE] Completed 87,692 cycles
+  Final PC: 0x0784
+  Halted: False
+
+[UNKNOWN] Test completed but result unclear
+
+======================================================================
+Running: test_roms/instr_timing.gb
+======================================================================
+
+======================================================================
+Running: test_roms/interrupt_time.gb
+======================================================================
+
+
+======================================================================
+TEST SUMMARY
+======================================================================
+[FAIL]: HALT Bug Test
+         No clear pass/fail in output
+[FAIL]: CPU Instructions (Full)
+         No clear pass/fail in output
+[FAIL]: Instruction Timing
+         File not found: test_roms/instr_timing.gb
+[FAIL]: Interrupt Timing
+         File not found: test_roms/interrupt_time.gb
+
+======================================================================
+Results: 0 passed, 4 failed
+======================================================================

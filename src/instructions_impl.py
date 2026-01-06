@@ -429,7 +429,10 @@ class InstructionImplementations:
 
     def _execute_add_sp_n(self, offset) -> None:
         """ADD SP,n - Add signed byte to SP"""
-        # offset is signed 8-bit
+        # Save unsigned offset for flag calculations
+        unsigned_offset = offset
+
+        # Convert offset to signed 8-bit
         if offset > 127:
             offset = offset - 256
 
@@ -442,13 +445,16 @@ class InstructionImplementations:
         # Flags
         self.registers.flags.zero = False
         self.registers.flags.subtract = False
-        # Half-carry and carry are set based on lower byte addition
-        self.registers.flags.half_carry = ((sp_before & 0xF) + (offset & 0xF)) > 0xF
-        self.registers.flags.carry = ((sp_before & 0xFF) + (offset & 0xFF)) > 0xFF
+        # Half-carry and carry are set based on lower byte addition using UNSIGNED offset
+        self.registers.flags.half_carry = ((sp_before & 0xF) + (unsigned_offset & 0xF)) > 0xF
+        self.registers.flags.carry = ((sp_before & 0xFF) + (unsigned_offset & 0xFF)) > 0xFF
 
     def _execute_ld_hl_sp_n(self, offset) -> None:
         """LD HL,SP+n - Load SP + signed offset into HL"""
-        # offset is signed 8-bit
+        # Save unsigned offset for flag calculations
+        unsigned_offset = offset
+
+        # Convert offset to signed 8-bit
         if offset > 127:
             offset = offset - 256
 
@@ -459,9 +465,9 @@ class InstructionImplementations:
         # Flags
         self.registers.flags.zero = False
         self.registers.flags.subtract = False
-        # Half-carry and carry are set based on lower byte addition
-        self.registers.flags.half_carry = ((self.registers._sp & 0xF) + (offset & 0xF)) > 0xF
-        self.registers.flags.carry = ((self.registers._sp & 0xFF) + (offset & 0xFF)) > 0xFF
+        # Half-carry and carry are set based on lower byte addition using UNSIGNED offset
+        self.registers.flags.half_carry = ((self.registers._sp & 0xF) + (unsigned_offset & 0xF)) > 0xF
+        self.registers.flags.carry = ((self.registers._sp & 0xFF) + (unsigned_offset & 0xFF)) > 0xFF
 
     def _execute_ld_sp_hl(self) -> None:
         """LD SP,HL - Load HL into SP"""
