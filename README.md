@@ -1,139 +1,191 @@
 # SnekBoy - Game Boy Emulator
 
-A Game Boy (DMG) emulator written in Python, focused on accurate CPU emulation.
-
-## Current Status
-
-**CPU Implementation: 97% Complete (500/512 opcodes)**
-- Regular opcodes: 244/256 (95%)
-- CB-prefixed opcodes: 256/256 (100%)
-
-**Test Progress:**
-- ✅ Executes 5.8M cycles of Blargg CPU test without crashing
-- ✅ All basic arithmetic, logic, and control flow working
-- ✅ Complete CB instruction set (rotates, shifts, bit operations)
-- ⚠️ Test output suggests some instruction behavior issues remain
+A Game Boy (DMG) emulator written in Python.
 
 ## Quick Start
 
 ```bash
-# Run Blargg CPU test
-python -m tests.test_with_blargg
+# Install dependencies
+pip install pygame
 
-# Expected output: Executes ~5.8M cycles, serial output visible
+# Run Tetris
+python src/emulator.py
+
+# Run tests
+python tests/run_unit_tests.py all
+python tests/run_blargg_tests.py
 ```
 
-## Architecture
+**Controls:**
+- A/B/Start/Select: A, S, Z, X
+- D-Pad (Up/Down/Left/Right): I, K, J, L
+- Quit: ESC
+
+---
+
+## 📚 Documentation Guide
+
+### New Developer? Start Here
+
+1. **[ONBOARDING.md](ONBOARDING.md)** (10 min read)
+   - Quick overview and first steps
+   - What to read, what to skip
+   - Your first task: Fix Blargg test 03
+
+2. **[PROJECT_STATUS.md](PROJECT_STATUS.md)** (5 min read)
+   - Current status: what works, what doesn't
+   - Known bugs and issues
+   - Architecture overview
+   - **READ THIS BEFORE CODING**
+
+3. **[DEBUGGING_SESSION.md](DEBUGGING_SESSION.md)** (reference)
+   - Complete history of all debugging
+   - Every bug found and how it was fixed
+   - Read when you encounter a bug
+
+### Additional Documentation
+
+- **[tests/README.md](tests/README.md)** - Test suite organization
+- **[docs/GENERAL_GB_REFERENCE.md](docs/GENERAL_GB_REFERENCE.md)** - Game Boy hardware reference
+- **[docs/ppu_implementation.md](docs/ppu_implementation.md)** - PPU/graphics details
+- **[docs/timer_implementation_status.md](docs/timer_implementation_status.md)** - Timer system
+- **[docs/joypad_implementation.md](docs/joypad_implementation.md)** - Input handling
+
+---
+
+## Current Status
+
+### ✅ Working
+- Core CPU instruction set (all 512 opcodes)
+- Timer system (DIV, TIMA, TMA, TAC)
+- Interrupt handling (EI/DI/RETI with correct timing)
+- PPU/Display (background, sprites, LCD modes)
+- Joypad input (all buttons)
+- Blargg cpu_instrs tests 01-02 **PASS**
+
+### ❌ Not Working Yet
+- Blargg test 03 (OP SP,HL) - **NEXT PRIORITY**
+- Audio (not implemented)
+- MBCs (only basic ROM loading)
+- Save states
+
+---
+
+## Project Structure
 
 ```
-src/
-├── cpu.py              # Main CPU class (fetch/decode/execute loop)
-├── cpu_decoder.py      # Opcode decoder (converts bytes to instructions)
-├── instructions_impl.py # All instruction implementations
-├── opcodes.py          # Opcode definitions (244 regular + 256 CB)
-├── registers.py        # Register system (AF, BC, DE, HL, SP, PC)
-├── memory.py           # Memory management (64KB address space)
-└── utils.py            # Validation and constants
-
-tests/
-└── test_with_blargg.py # Blargg test ROM runner
+snekboy/
+├── README.md              ← You are here
+├── ONBOARDING.md         ← Start here if new
+├── PROJECT_STATUS.md     ← Current status & bugs
+├── DEBUGGING_SESSION.md  ← Bug fix history
+│
+├── src/                  ← Source code
+│   ├── cpu.py           # CPU core
+│   ├── instructions_impl.py  # All instructions
+│   ├── memory.py        # Memory & I/O
+│   ├── ppu.py           # Graphics
+│   ├── joypad.py        # Input
+│   └── emulator.py      # Main entry
+│
+├── tests/                ← Test suite
+│   ├── README.md        # Test organization
+│   ├── run_unit_tests.py     # Component tests
+│   ├── run_blargg_tests.py   # Blargg test ROMs
+│   └── diagnostic_tools.py   # Debug helpers
+│
+└── docs/                 ← Technical docs
+    ├── GENERAL_GB_REFERENCE.md  # Hardware reference
+    ├── ppu_implementation.md
+    ├── timer_implementation_status.md
+    └── joypad_implementation.md
 ```
 
-## Implemented Features
+---
 
-### Complete ✅
-- **All CB-prefixed instructions** (256 opcodes)
-  - Rotates: RLC, RRC, RL, RR (64 opcodes)
-  - Shifts: SLA, SRA, SRL, SWAP (64 opcodes)
-  - Bit operations: BIT, RES, SET (192 opcodes)
+## Running Tests
 
-- **Core Arithmetic & Logic** (44 opcodes)
-  - ADD, SUB, ADC, SBC, INC, DEC, CP
-  - AND, OR, XOR
+### Unit Tests
+```bash
+# All tests
+python tests/run_unit_tests.py all
 
-- **Load Instructions** (~114 opcodes)
-  - All LD r,r variants (64 opcodes)
-  - LD r,n (immediate loads)
-  - LD rr,nn (16-bit loads)
-  - Special: LDI, LDD, LDH, LD (nn),A
-
-- **Control Flow** (32 opcodes)
-  - JP, JR (conditional and unconditional)
-  - CALL, RET (with conditions)
-  - RETI, RST
-
-- **Stack Operations** (8 opcodes)
-  - PUSH/POP for all register pairs
-
-- **16-bit Arithmetic** (12 opcodes)
-  - INC/DEC for BC, DE, HL, SP
-  - ADD HL,rr
-
-- **Rotates & Shifts** (4 opcodes)
-  - RLCA, RLA, RRCA, RRA
-
-- **Miscellaneous** (8 opcodes)
-  - SCF, CCF, CPL, DAA
-  - NOP, HALT, STOP, DI, EI
-
-### Missing ⏳
-- **~12 regular opcodes** (obscure variants)
-- **System features** (not opcodes):
-  - Interrupt system (IME, IE, IF registers)
-  - Timer registers
-  - PPU (graphics)
-  - APU (sound)
-  - Joypad input
-
-## Implementation Highlights
-
-### Pattern-Based Decoding
-```python
-# CB instructions use bit patterns for efficient decoding
-reg_index = cb_opcode & 0x07        # Low 3 bits = register
-operation = (cb_opcode >> 3) & 0x07 # Mid 3 bits = operation
-bit_number = (cb_opcode >> 3) & 0x07 # For BIT/RES/SET
+# Specific component
+python tests/run_unit_tests.py cpu
+python tests/run_unit_tests.py timer
+python tests/run_unit_tests.py joypad
 ```
 
-### Modular Design
-- CPU inherits from `InstructionImplementations` for all execution logic
-- Separate decoder keeps opcode parsing clean
-- Memory subsystem handles serial port for test output
+### Blargg Test ROMs
+```bash
+# Download test ROMs first (one-time)
+python tests/download_test_roms.py
 
-### Accurate Flag Handling
-All instructions correctly implement Z, N, H, C flags per Game Boy specification.
+# Run tests
+python tests/run_blargg_tests.py
+```
 
-## Test Output Analysis
+### Diagnostic Tools
+```bash
+# Check game state
+python tests/diagnostic_tools.py tetris_state
 
-Current serial output from Blargg test: `cpu_instrs..0.:0.  0.:0.  0.`
+# Trace interrupts
+python tests/diagnostic_tools.py trace_interrupts
 
-This truncated output suggests:
-- ROM is executing and producing output (serial port working)
-- Test likely encountering issues with specific instruction behavior
-- Needs deeper investigation of test expectations vs implementation
+# Monitor VBlank
+python tests/diagnostic_tools.py check_vblank
+```
 
-## Next Steps
+---
 
-1. **Debug test output** - Understand what the serial output means
-2. **Find remaining opcodes** - Identify the ~12 missing regular opcodes
-3. **Implement interrupts** - Basic IME flag and interrupt handling
-4. **Add timer** - For timing-dependent tests
-5. **Investigate flag behavior** - Some instructions may have incorrect flag logic
+## Next Development Priorities
 
-## Project History
+1. **Fix Blargg Test 03** (OP SP,HL)
+   - Likely flag calculation in `ADD SP,e` or `LD HL,SP+e`
+   - See `DEBUGGING_SESSION.md` → "Issue 1"
 
-This is a resurrection of an old Game Boy emulator project. Major recent additions:
-- All 256 CB-prefixed instructions (Jan 2025)
-- 64 LD r,r register-to-register loads
-- Complete arithmetic and control flow
-- Removed numpy dependency (now uses bytearray)
+2. **Complete Blargg Suite** (Tests 04-11)
 
-## References
+3. **Test Tetris Gameplay**
 
-- [GB Opcode Table](https://gbdev.io/gb-opcodes/optables/)
-- [Pan Docs](https://gbdev.io/pandocs/)
-- [Blargg's Test ROMs](https://github.com/retrio/gb-test-roms)
+4. **Add MBC Support**
+
+---
+
+## Dependencies
+
+- Python 3.8+
+- pygame (for display)
+
+```bash
+pip install pygame
+```
+
+---
+
+## Resources
+
+- [Pan Docs](https://gbdev.io/pandocs/) - Complete Game Boy reference
+- [GBEDG](https://github.com/Hacktix/GBEDG) - Timing documentation
+- [Opcode Table](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
+- [Blargg Test ROMs](https://gbdev.gg8.se/files/roms/blargg-gb-tests/)
+- [r/EmuDev](https://www.reddit.com/r/EmuDev/) - Community support
+
+---
 
 ## License
 
-[Add license here]
+MIT License - See LICENSE file for details
+
+---
+
+## Contributing
+
+Before starting:
+1. Read [ONBOARDING.md](ONBOARDING.md)
+2. Read [PROJECT_STATUS.md](PROJECT_STATUS.md)
+3. Run tests to verify current state
+4. Check known issues before starting work
+
+**First contribution goal: Get Blargg test 03 passing!**

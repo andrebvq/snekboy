@@ -213,7 +213,8 @@ class InstructionImplementations:
     def _execute_ei(self) -> None:
         """EI - Enable Interrupts"""
         # EI enables interrupts AFTER the next instruction (Game Boy quirk)
-        self._ei_pending = True
+        # Set to 2 so it counts down: 2->1 (next instr), 1->0 (enable IME)
+        self._ei_pending = 2
 
     # === CONTROL FLOW INSTRUCTIONS ===
 
@@ -521,8 +522,10 @@ class InstructionImplementations:
 
         self.registers._pc = (high << 8) | low
 
-        # Enable interrupts (TODO: implement IME flag)
-        pass
+        # Enable interrupts immediately (no delay like EI)
+        self.ime = True
+        # Cancel any pending EI if it was set
+        self._ei_pending = 0
 
     def _execute_rst(self, vector) -> None:
         """RST - Restart (call to fixed address)"""

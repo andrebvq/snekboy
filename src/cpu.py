@@ -52,7 +52,7 @@ class CPU(InstructionImplementations):
         self.total_cycles = 0
         self.halted = False
         self.ime = False  # Interrupt Master Enable flag
-        self._ei_pending = False  # EI enables interrupts AFTER next instruction
+        self._ei_pending = 0  # EI delay counter: counts down to 0 before enabling IME
 
         self._initialize_state()
 
@@ -327,7 +327,7 @@ class CPU(InstructionImplementations):
         self.ime = False
 
         # Cancel EI pending if interrupt occurs
-        self._ei_pending = False
+        self._ei_pending = 0
 
         # Exit halt mode
         self.halted = False
@@ -466,10 +466,12 @@ class CPU(InstructionImplementations):
         # EXECUTE
         self.execute_instruction(instr_type, target, immediate)
 
-        # Handle EI delay: enable interrupts AFTER the instruction following EI
-        if self._ei_pending:
-            self.ime = True
-            self._ei_pending = False
+        # Handle EI delay: count down and enable interrupts when counter reaches 0
+        # EI sets counter to 2, then: 2->1 (execute next instr), 1->0 (enable IME)
+        if self._ei_pending > 0:
+            self._ei_pending -= 1
+            if self._ei_pending == 0:
+                self.ime = True
 
         # UPDATE
         # Note: cycles from opcodes are in T-cycles, but _update_timers expects M-cycles
