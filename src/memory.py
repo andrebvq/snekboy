@@ -17,6 +17,7 @@ Memory Map:
 
 from typing import Optional
 from src.utils import validate_byte, validate_word, MemoryRanges
+from src.joypad import Joypad
 
 class Memory:
     """Game Boy Memory Management Unit"""
@@ -29,15 +30,21 @@ class Memory:
         self._serial_buffer = 0
         self._serial_output = []  # Capture all serial output
 
+        # Reference to CPU for timer reset and interrupts
+        self._cpu = cpu
+
+        # Joypad controller (needs CPU for interrupt callback)
+        if cpu:
+            self.joypad = Joypad(interrupt_callback=cpu._request_interrupt)
+        else:
+            self.joypad = Joypad()
+
         # Interrupt registers
         # IE (0xFFFF) - Interrupt Enable
         # IF (0xFF0F) - Interrupt Flags
         # Both are readable/writable, initialized to 0
         self._data[0xFFFF] = 0x00  # IE register
         self._data[0xFF0F] = 0x00  # IF register
-
-        # Reference to CPU for timer reset
-        self._cpu = cpu
 
         # Optional: Track read/write for debugging
         self._read_count = 0
@@ -47,19 +54,30 @@ class Memory:
         """Read a single byte from memory"""
         address = validate_word(address)  # Ensure 16-bit address
         self._read_count += 1
-        
+
+        # P1/JOYP register (0xFF00) - Joypad
+        if address == 0xFF00:
+            return self.joypad.read_p1()
+
         # Handle special memory regions
         if address >= MemoryRanges.ECHO_RAM_START and address <= MemoryRanges.ECHO_RAM_END:
             # Echo RAM mirrors C000-DDFF
             mirror_address = address - 0x2000
             return int(self._data[mirror_address])
-        
+
         return int(self._data[address])
     
     def write_byte(self, address: int, value: int) -> None:
         """Write byte with serial port handling"""
         address = validate_word(address)
         value = validate_byte(value)
+
+        # P1/JOYP register (0xFF00) - Joypad
+        if address == 0xFF00:
+            self.joypad.write_p1(value)
+            # Store the selection bits in memory too
+            self._data[address] = value
+            return
 
         # DIV register (0xFF04) - writing any value resets it to 0 AND the system counter
         if address == 0xFF04:

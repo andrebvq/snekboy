@@ -1,0 +1,180 @@
+"""
+Game Boy Joypad (P1) implementation
+
+P1 Register (0xFF00):
+  Bit 7-6: Not used
+  Bit 5: P15 Select Button Keys (0=Select)
+  Bit 4: P14 Select Direction Keys (0=Select)
+  Bit 3: P13 Input Down or Start (0=Pressed)
+  Bit 2: P12 Input Up or Select (0=Pressed)
+  Bit 1: P11 Input Left or B (0=Pressed)
+  Bit 0: P10 Input Right or A (0=Pressed)
+
+Reading works by:
+1. Write to P1 to select button group (set bit 4 or 5 to 0)
+2. Read P1 to get button states (bits 0-3)
+
+Note: 0 = pressed, 1 = not pressed (inverted logic)
+"""
+
+class Joypad:
+    """Game Boy joypad controller"""
+
+    def __init__(self, interrupt_callback=None):
+        """
+        Initialize joypad state
+
+        Args:
+            interrupt_callback: Optional callback function to trigger joypad interrupt
+                                Should take interrupt bit number as argument
+        """
+        self.interrupt_callback = interrupt_callback
+
+        # Button states (True = pressed, False = not pressed)
+        self.button_a = False
+        self.button_b = False
+        self.button_start = False
+        self.button_select = False
+        self.dpad_up = False
+        self.dpad_down = False
+        self.dpad_left = False
+        self.dpad_right = False
+
+        # P1 register state
+        self.select_buttons = True   # Bit 5 (True = not selected)
+        self.select_dpad = True       # Bit 4 (True = not selected)
+
+    def write_p1(self, value: int) -> None:
+        """
+        Write to P1 register (0xFF00)
+
+        Games write to select which button group to read
+        Bit 5 = 0: Select button keys (A, B, Start, Select)
+        Bit 4 = 0: Select direction keys (Up, Down, Left, Right)
+        """
+        # Only bits 4-5 are writable
+        self.select_buttons = (value & 0x20) != 0  # Bit 5
+        self.select_dpad = (value & 0x10) != 0     # Bit 4
+
+    def read_p1(self) -> int:
+        """
+        Read P1 register (0xFF00)
+
+        Returns current button states based on selected group
+        Bits 0-3 contain button state (0 = pressed, 1 = not pressed)
+        """
+        # Start with bits 4-5 reflecting current selection
+        result = 0xC0  # Bits 6-7 are always 1
+
+        # Set selection bits (what we're currently selecting)
+        if self.select_buttons:
+            result |= 0x20  # Bit 5 = 1 (buttons not selected)
+        if self.select_dpad:
+            result |= 0x10  # Bit 4 = 1 (dpad not selected)
+
+        # Return button states based on what's selected
+        # Note: 0 = pressed, 1 = not pressed (inverted)
+
+        if not self.select_buttons:
+            # Button keys selected
+            # Bit 3: Start
+            # Bit 2: Select
+            # Bit 1: B
+            # Bit 0: A
+            result |= (0 if self.button_start else 0x08)  # Bit 3
+            result |= (0 if self.button_select else 0x04) # Bit 2
+            result |= (0 if self.button_b else 0x02)      # Bit 1
+            result |= (0 if self.button_a else 0x01)      # Bit 0
+
+        if not self.select_dpad:
+            # Direction keys selected
+            # Bit 3: Down
+            # Bit 2: Up
+            # Bit 1: Left
+            # Bit 0: Right
+            result |= (0 if self.dpad_down else 0x08)   # Bit 3
+            result |= (0 if self.dpad_up else 0x04)     # Bit 2
+            result |= (0 if self.dpad_left else 0x02)   # Bit 1
+            result |= (0 if self.dpad_right else 0x01)  # Bit 0
+
+        # If both selected (both bits 0), return OR of both groups
+        if not self.select_buttons and not self.select_dpad:
+            result = 0xC0
+            result |= (0 if (self.button_start or self.dpad_down) else 0x08)
+            result |= (0 if (self.button_select or self.dpad_up) else 0x04)
+            result |= (0 if (self.button_b or self.dpad_left) else 0x02)
+            result |= (0 if (self.button_a or self.dpad_right) else 0x01)
+
+        # If neither selected (both bits 1), return all 1s (no buttons pressed)
+        if self.select_buttons and self.select_dpad:
+            result |= 0x0F  # All buttons read as not pressed
+
+        return result
+
+    def press_button(self, button: str) -> None:
+        """Press a button (set it to pressed state and trigger interrupt)"""
+        button = button.lower()
+        if button == 'a':
+            self.button_a = True
+        elif button == 'b':
+            self.button_b = True
+        elif button == 'start':
+            self.button_start = True
+        elif button == 'select':
+            self.button_select = True
+        elif button == 'up':
+            self.dpad_up = True
+        elif button == 'down':
+            self.dpad_down = True
+        elif button == 'left':
+            self.dpad_left = True
+        elif button == 'right':
+            self.dpad_right = True
+
+        # Trigger joypad interrupt (bit 4 of IF register)
+        if self.interrupt_callback:
+            self.interrupt_callback(4)
+
+    def release_button(self, button: str) -> None:
+        """Release a button (set it to not pressed state)"""
+        button = button.lower()
+        if button == 'a':
+            self.button_a = False
+        elif button == 'b':
+            self.button_b = False
+        elif button == 'start':
+            self.button_start = False
+        elif button == 'select':
+            self.button_select = False
+        elif button == 'up':
+            self.dpad_up = False
+        elif button == 'down':
+            self.dpad_down = False
+        elif button == 'left':
+            self.dpad_left = False
+        elif button == 'right':
+            self.dpad_right = False
+
+    def release_all(self) -> None:
+        """Release all buttons"""
+        self.button_a = False
+        self.button_b = False
+        self.button_start = False
+        self.button_select = False
+        self.dpad_up = False
+        self.dpad_down = False
+        self.dpad_left = False
+        self.dpad_right = False
+
+    def get_state_string(self) -> str:
+        """Get a string representation of current button states (for debugging)"""
+        buttons = []
+        if self.dpad_up: buttons.append('UP')
+        if self.dpad_down: buttons.append('DOWN')
+        if self.dpad_left: buttons.append('LEFT')
+        if self.dpad_right: buttons.append('RIGHT')
+        if self.button_a: buttons.append('A')
+        if self.button_b: buttons.append('B')
+        if self.button_start: buttons.append('START')
+        if self.button_select: buttons.append('SELECT')
+        return ' '.join(buttons) if buttons else 'none'

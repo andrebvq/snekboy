@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from src.opcodes import OPCODES, CB_OPCODES
 from src.instructions_impl import InstructionImplementations
 from src.cpu_decoder import InstructionType, decode_instruction_params
+from src.ppu import PPU
 
 class ArithmeticTarget(Enum):
     A = auto()
@@ -44,6 +45,9 @@ class CPU(InstructionImplementations):
 
         # Create memory with reference to this CPU
         self.memory = memory if memory else Memory(cpu=self)
+
+        # Create PPU with reference to memory and interrupt callback
+        self.ppu = PPU(self.memory, self._request_interrupt)
 
         self.total_cycles = 0
         self.halted = False
@@ -306,6 +310,17 @@ class CPU(InstructionImplementations):
 
         return False
 
+    def _request_interrupt(self, interrupt_bit: int) -> None:
+        """
+        Request an interrupt by setting the appropriate bit in IF register
+
+        Args:
+            interrupt_bit: Which interrupt to request (0=VBlank, 1=STAT, 2=Timer, 3=Serial, 4=Joypad)
+        """
+        if_flags = self.memory.read_byte(0xFF0F)
+        if_flags |= (1 << interrupt_bit)
+        self.memory.write_byte(0xFF0F, if_flags)
+
     def _service_interrupt(self, interrupt_bit: int) -> None:
         """Service an interrupt by jumping to its vector"""
         # Disable IME
@@ -417,11 +432,12 @@ class CPU(InstructionImplementations):
 
     def step(self) -> int:
         """Execute one instruction"""
-        # If halted, update timers first (so interrupt flags can be set)
+        # If halted, update timers and PPU (so interrupt flags can be set)
         if self.halted:
             cycles = 4  # 4 T-cycles = 1 M-cycle
             m_cycles = cycles // 4
             self._update_timers(m_cycles)
+            self.ppu.step(cycles)
             self.total_cycles += cycles
 
             # Then check if we should wake (after timers updated)
@@ -437,6 +453,7 @@ class CPU(InstructionImplementations):
             cycles = 20  # Interrupt handling takes ~5 M-cycles (20 T-cycles) (simplified)
             m_cycles = cycles // 4
             self._update_timers(m_cycles)
+            self.ppu.step(cycles)
             self.total_cycles += cycles
             return cycles
 
@@ -459,6 +476,10 @@ class CPU(InstructionImplementations):
         # 1 M-cycle = 4 T-cycles
         m_cycles = cycles // 4
         self._update_timers(m_cycles)
+
+        # Update PPU (PPU expects T-cycles)
+        self.ppu.step(cycles)
+
         self.total_cycles += cycles
 
         return cycles
