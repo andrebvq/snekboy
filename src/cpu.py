@@ -464,7 +464,11 @@ class CPU(InstructionImplementations):
         instr_type, target, immediate, cycles = self.decode(opcode)
 
         # EXECUTE
-        self.execute_instruction(instr_type, target, immediate)
+        # Some instructions return actual cycles consumed (conditional branches)
+        # If None is returned, use the cycles from decode
+        actual_cycles = self.execute_instruction(instr_type, target, immediate)
+        if actual_cycles is not None:
+            cycles = actual_cycles
 
         # Handle EI delay: count down and enable interrupts when counter reaches 0
         # EI sets counter to 2, then: 2->1 (execute next instr), 1->0 (enable IME)
@@ -615,20 +619,41 @@ class CPU(InstructionImplementations):
         self.registers._a = validate_byte(result)
 
     def execute_instruction(self, instr_type, target, immediate):
-        """Dispatch instruction to appropriate handler"""
+        """
+        Dispatch instruction to appropriate handler
+
+        Returns:
+            Optional[int]: Actual cycles consumed for instructions with variable timing
+                          (conditional jumps/calls/returns). None means use default from opcode table.
+        """
+        # Most instructions return None (use default cycles from opcode table)
+        # Only conditional control flow returns actual cycles
 
         if instr_type == InstructionType.NOP:
             pass
 
         elif instr_type == InstructionType.HALT:
             self.halted = True
-        
+
         elif instr_type == InstructionType.STOP:
-            self.halted = True  # Similar to HALT for now
+            # Check if KEY1 (0xFF4D) bit 0 is set for CGB speed switching
+            key1 = self.memory.read_byte(0xFF4D)
+            if key1 & 0x01:  # Bit 0 set - speed switch requested
+                # Toggle bit 7 (current speed) and clear bit 0 (armed flag)
+                current_speed = (key1 >> 7) & 0x01
+                new_speed = 1 - current_speed
+                new_key1 = (new_speed << 7)  # Set new speed, clear armed flag
+                self.memory.write_byte(0xFF4D, new_key1)
+                # Don't halt - just continue execution after speed switch
+            else:
+                # Normal STOP behavior - halt until button press
+                # For simplicity, we'll just halt like HALT instruction
+                # (Real GB would wake on joypad P10-P13, but tests don't use this)
+                self.halted = True
 
         elif instr_type == InstructionType.ADD:
             self._execute_add(target, immediate)
-        
+
         elif instr_type == InstructionType.SUB:
             self._execute_sub(target, immediate)
 
@@ -648,7 +673,7 @@ class CPU(InstructionImplementations):
 
         elif instr_type == InstructionType.DEC:
             self._execute_dec(target)
-        
+
         elif instr_type == InstructionType.LD:
             self._execute_ld(target, immediate)
 
@@ -676,21 +701,21 @@ class CPU(InstructionImplementations):
         elif instr_type == InstructionType.EI:
             self._execute_ei()
 
-        # Control flow
+        # Control flow - these return actual cycles for conditional branches
         elif instr_type == InstructionType.JP:
-            self._execute_jp(target, immediate)
+            return self._execute_jp(target, immediate)
 
         elif instr_type == InstructionType.JP_HL:
             self._execute_jp_hl()
 
         elif instr_type == InstructionType.JR:
-            self._execute_jr(target, immediate)
+            return self._execute_jr(target, immediate)
 
         elif instr_type == InstructionType.CALL:
-            self._execute_call(target, immediate)
+            return self._execute_call(target, immediate)
 
         elif instr_type == InstructionType.RET:
-            self._execute_ret(target)
+            return self._execute_ret(target)
 
         # Rotates/Shifts
         elif instr_type == InstructionType.RLCA:

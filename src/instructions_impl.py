@@ -218,19 +218,33 @@ class InstructionImplementations:
 
     # === CONTROL FLOW INSTRUCTIONS ===
 
-    def _execute_jp(self, address, condition=None) -> None:
-        """JP - Jump to address (unconditional or conditional)"""
+    def _execute_jp(self, address, condition=None) -> int:
+        """
+        JP - Jump to address (unconditional or conditional)
+
+        Returns:
+            Actual cycles consumed (16 if jump taken, 12 if conditional not taken)
+        """
         should_jump = self._check_condition(condition)
 
         if should_jump:
             self.registers._pc = validate_word(address)
+            return 16  # Jump taken: always 16 cycles
+        else:
+            # Conditional jump not taken: 12 cycles
+            return 12 if condition is not None else 16
 
     def _execute_jp_hl(self) -> None:
         """JP (HL) - Jump to address in HL"""
         self.registers._pc = self.registers.hl
 
-    def _execute_jr(self, offset, condition=None) -> None:
-        """JR - Relative jump (signed 8-bit offset)"""
+    def _execute_jr(self, offset, condition=None) -> int:
+        """
+        JR - Relative jump (signed 8-bit offset)
+
+        Returns:
+            Actual cycles consumed (12 if jump taken, 8 if conditional not taken)
+        """
         should_jump = self._check_condition(condition)
 
         if should_jump:
@@ -239,9 +253,18 @@ class InstructionImplementations:
                 offset = offset - 256  # Convert to signed
 
             self.registers._pc = validate_word(self.registers._pc + offset)
+            return 12  # Jump taken: always 12 cycles
+        else:
+            # Conditional jump not taken: 8 cycles
+            return 8 if condition is not None else 12
 
-    def _execute_call(self, address, condition=None) -> None:
-        """CALL - Call subroutine (push PC, then jump)"""
+    def _execute_call(self, address, condition=None) -> int:
+        """
+        CALL - Call subroutine (push PC, then jump)
+
+        Returns:
+            Actual cycles consumed (24 if call taken, 12 if conditional not taken)
+        """
         should_call = self._check_condition(condition)
 
         if should_call:
@@ -253,9 +276,21 @@ class InstructionImplementations:
 
             # Jump to address
             self.registers._pc = validate_word(address)
+            return 24  # Call taken: always 24 cycles
+        else:
+            # Conditional call not taken: 12 cycles
+            return 12
 
-    def _execute_ret(self, condition=None) -> None:
-        """RET - Return from subroutine (pop PC from stack)"""
+    def _execute_ret(self, condition=None) -> int:
+        """
+        RET - Return from subroutine (pop PC from stack)
+
+        Returns:
+            Actual cycles consumed:
+            - Unconditional RET: 16 cycles
+            - Conditional RET taken: 20 cycles
+            - Conditional RET not taken: 8 cycles
+        """
         should_ret = self._check_condition(condition)
 
         if should_ret:
@@ -266,6 +301,12 @@ class InstructionImplementations:
             self.registers._sp = validate_word(self.registers._sp + 1)
 
             self.registers._pc = (high << 8) | low
+
+            # Conditional RET taken: 20 cycles, unconditional RET: 16 cycles
+            return 20 if condition is not None else 16
+        else:
+            # Conditional RET not taken: 8 cycles
+            return 8
 
     # === ROTATE AND SHIFT INSTRUCTIONS ===
 
@@ -444,7 +485,8 @@ class InstructionImplementations:
         self.registers._sp = validate_word(result)
 
         # Flags
-        self.registers.flags.zero = False
+        # Z is preserved (not modified) - do NOT set it!
+        # self.registers.flags.zero is unchanged
         self.registers.flags.subtract = False
         # Half-carry and carry are set based on lower byte addition using UNSIGNED offset
         self.registers.flags.half_carry = ((sp_before & 0xF) + (unsigned_offset & 0xF)) > 0xF
@@ -464,7 +506,8 @@ class InstructionImplementations:
         self.registers.hl = validate_word(result)
 
         # Flags
-        self.registers.flags.zero = False
+        # Z is preserved (not modified) - do NOT set it!
+        # self.registers.flags.zero is unchanged
         self.registers.flags.subtract = False
         # Half-carry and carry are set based on lower byte addition using UNSIGNED offset
         self.registers.flags.half_carry = ((self.registers._sp & 0xF) + (unsigned_offset & 0xF)) > 0xF
