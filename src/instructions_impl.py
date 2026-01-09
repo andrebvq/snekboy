@@ -484,9 +484,8 @@ class InstructionImplementations:
 
         self.registers._sp = validate_word(result)
 
-        # Flags
-        # Z is preserved (not modified) - do NOT set it!
-        # self.registers.flags.zero is unchanged
+        # Flags: Z=0 N=0 H=calc C=calc (per Game Boy CPU manual)
+        self.registers.flags.zero = False  # Always reset to 0
         self.registers.flags.subtract = False
         # Half-carry and carry are set based on lower byte addition using UNSIGNED offset
         self.registers.flags.half_carry = ((sp_before & 0xF) + (unsigned_offset & 0xF)) > 0xF
@@ -505,9 +504,8 @@ class InstructionImplementations:
 
         self.registers.hl = validate_word(result)
 
-        # Flags
-        # Z is preserved (not modified) - do NOT set it!
-        # self.registers.flags.zero is unchanged
+        # Flags: Z=0 N=0 H=calc C=calc (per Game Boy CPU manual)
+        self.registers.flags.zero = False  # Always reset to 0
         self.registers.flags.subtract = False
         # Half-carry and carry are set based on lower byte addition using UNSIGNED offset
         self.registers.flags.half_carry = ((self.registers._sp & 0xF) + (unsigned_offset & 0xF)) > 0xF

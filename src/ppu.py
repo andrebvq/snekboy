@@ -257,6 +257,9 @@ class PPU:
 
             # Get tile number from tile map
             tile_map_addr = tile_map_base + (tile_row * 32) + tile_col
+
+            # PPU needs unrestricted access to VRAM during rendering
+            self.memory._bypass_ppu_restrictions = True
             tile_num = self.memory.read_byte(tile_map_addr)
 
             # Calculate tile data address
@@ -272,6 +275,7 @@ class PPU:
             # Read tile data (2 bytes per line, 1 bit from each byte per pixel)
             byte1 = self.memory.read_byte(tile_addr)
             byte2 = self.memory.read_byte(tile_addr + 1)
+            self.memory._bypass_ppu_restrictions = False
 
             # Get color index (0-3) for this pixel
             # Bit 7 is leftmost pixel, bit 0 is rightmost

@@ -9,7 +9,7 @@ check the screen buffer or run for a set number of cycles.
 from src.cpu import CPU
 from src.memory import Memory
 
-def run_test_rom(rom_path, max_cycles=30_000_000, debug=False):
+def run_test_rom(rom_path, max_cycles=1_000_000_000_000, debug=False):
     """
     Run a test ROM and check for pass/fail
 

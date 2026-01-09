@@ -53,6 +53,7 @@ class CPU(InstructionImplementations):
         self.halted = False
         self.ime = False  # Interrupt Master Enable flag
         self._ei_pending = 0  # EI delay counter: counts down to 0 before enabling IME
+        self._halt_bug_active = False  # HALT bug: skip next PC increment
 
         self._initialize_state()
 
@@ -76,7 +77,14 @@ class CPU(InstructionImplementations):
     def fetch_byte(self) -> int:
         """Fetch next byte from memory at PC and increment PC"""
         value = self.memory.read_byte(self.registers._pc)
-        self.registers._pc = validate_word(self.registers._pc + 1)
+
+        # HALT bug: skip PC increment once
+        if self._halt_bug_active:
+            self._halt_bug_active = False
+            # Don't increment PC - instruction will be fetched again next time
+        else:
+            self.registers._pc = validate_word(self.registers._pc + 1)
+
         return value
     
     def fetch_word(self) -> int:
@@ -107,12 +115,19 @@ class CPU(InstructionImplementations):
         )
 
         # CB instructions need special cycle handling
-        # 8 cycles for register operations, 16 for (HL)
+        # Different CB instructions have different timings for (HL):
+        # - BIT b,(HL): 12 T-cycles (read only)
+        # - SET/RES/Rotate/Shift (HL): 16 T-cycles (read + write)
+        # - Register operations: 8 T-cycles
         if opcode == 0xCB:
             if target == '(HL)':
-                cycles = 16
+                # Check if it's a BIT instruction (read-only)
+                if instr_type == InstructionType.BIT:
+                    cycles = 12  # BIT b,(HL) - read only
+                else:
+                    cycles = 16  # SET/RES/Rotate/Shift (HL) - read + write
             else:
-                cycles = 8
+                cycles = 8  # Register operations
 
         return (instr_type, target, immediate, cycles)
     
@@ -633,7 +648,20 @@ class CPU(InstructionImplementations):
             pass
 
         elif instr_type == InstructionType.HALT:
-            self.halted = True
+            # Check for HALT bug: if IME=0 and interrupt is pending
+            ie = self.memory.read_byte(0xFFFF)
+            if_flags = self.memory.read_byte(0xFF0F)
+            interrupt_pending = (ie & if_flags & 0x1F) != 0
+
+            if not self.ime and interrupt_pending:
+                # HALT bug: halt exits immediately, PC fails to increment after next instruction
+                # This causes the next instruction to be executed twice
+                # Set flag to skip PC increment on the next fetch
+                self._halt_bug_active = True
+                # Don't enter halted state
+            else:
+                # Normal HALT: enter halted state
+                self.halted = True
 
         elif instr_type == InstructionType.STOP:
             # Check if KEY1 (0xFF4D) bit 0 is set for CGB speed switching

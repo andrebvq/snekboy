@@ -33,6 +33,9 @@ class Memory:
         # Reference to CPU for timer reset and interrupts
         self._cpu = cpu
 
+        # Flag to bypass PPU mode restrictions (for internal PPU access)
+        self._bypass_ppu_restrictions = False
+
         # Joypad controller (needs CPU for interrupt callback)
         if cpu:
             self.joypad = Joypad(interrupt_callback=cpu._request_interrupt)
@@ -55,6 +58,23 @@ class Memory:
         address = validate_word(address)  # Ensure 16-bit address
         self._read_count += 1
 
+        # Check for OAM access restrictions during PPU modes (only for CPU reads, not PPU reads)
+        # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
+        if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFE9F:
+            if self._cpu and hasattr(self._cpu, 'ppu'):
+                ppu_mode = self._cpu.ppu.current_mode
+                # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
+                if ppu_mode == 2 or ppu_mode == 3:
+                    return 0xFF  # Return 0xFF for blocked reads
+
+        # Check for VRAM access restrictions during PPU Mode 3 (only for CPU reads, not PPU reads)
+        # VRAM (0x8000-0x9FFF) is blocked during Mode 3 (Pixel Transfer)
+        if not self._bypass_ppu_restrictions and 0x8000 <= address <= 0x9FFF:
+            if self._cpu and hasattr(self._cpu, 'ppu'):
+                ppu_mode = self._cpu.ppu.current_mode
+                if ppu_mode == 3:  # Mode 3 = Pixel Transfer
+                    return 0xFF  # Return 0xFF for blocked reads
+
         # P1/JOYP register (0xFF00) - Joypad
         if address == 0xFF00:
             return self.joypad.read_p1()
@@ -71,6 +91,23 @@ class Memory:
         """Write byte with serial port handling"""
         address = validate_word(address)
         value = validate_byte(value)
+
+        # Check for OAM write restrictions during PPU modes (only for CPU writes, not PPU writes)
+        # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
+        if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFE9F:
+            if self._cpu and hasattr(self._cpu, 'ppu'):
+                ppu_mode = self._cpu.ppu.current_mode
+                # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
+                if ppu_mode == 2 or ppu_mode == 3:
+                    return  # Ignore write
+
+        # Check for VRAM write restrictions during PPU Mode 3 (only for CPU writes, not PPU writes)
+        # VRAM (0x8000-0x9FFF) is blocked during Mode 3 (Pixel Transfer)
+        if not self._bypass_ppu_restrictions and 0x8000 <= address <= 0x9FFF:
+            if self._cpu and hasattr(self._cpu, 'ppu'):
+                ppu_mode = self._cpu.ppu.current_mode
+                if ppu_mode == 3:  # Mode 3 = Pixel Transfer
+                    return  # Ignore write
 
         # P1/JOYP register (0xFF00) - Joypad
         if address == 0xFF00:
