@@ -18,6 +18,7 @@ Memory Map:
 from typing import Optional
 from src.utils import validate_byte, validate_word, MemoryRanges
 from src.joypad import Joypad
+from src.gameboy_doctor import should_override_ly_register, get_overridden_ly_value  # Gameboy Doctor integration
 
 class Memory:
     """Game Boy Memory Management Unit"""
@@ -78,6 +79,10 @@ class Memory:
         # P1/JOYP register (0xFF00) - Joypad
         if address == 0xFF00:
             return self.joypad.read_p1()
+
+        # Gameboy Doctor: Override LY register to 0x90 (VBlank) to avoid timing issues
+        if address == 0xFF44 and should_override_ly_register():
+            return get_overridden_ly_value()
 
         # Handle special memory regions
         if address >= MemoryRanges.ECHO_RAM_START and address <= MemoryRanges.ECHO_RAM_END:

@@ -10,6 +10,7 @@ from src.opcodes import OPCODES, CB_OPCODES
 from src.instructions_impl import InstructionImplementations
 from src.cpu_decoder import InstructionType, decode_instruction_params
 from src.ppu import PPU
+from src.gameboy_doctor import create_logger_if_enabled  # Gameboy Doctor integration
 
 class ArithmeticTarget(Enum):
     A = auto()
@@ -54,6 +55,9 @@ class CPU(InstructionImplementations):
         self.ime = False  # Interrupt Master Enable flag
         self._ei_pending = 0  # EI delay counter: counts down to 0 before enabling IME
         self._halt_bug_active = False  # HALT bug: skip next PC increment
+
+        # Gameboy Doctor: Create logger if enabled (None if disabled)
+        self._doctor_logger = create_logger_if_enabled()
 
         self._initialize_state()
 
@@ -502,6 +506,10 @@ class CPU(InstructionImplementations):
         self.ppu.step(cycles)
 
         self.total_cycles += cycles
+
+        # Gameboy Doctor: Log current state after instruction execution
+        if self._doctor_logger:
+            self._doctor_logger.log_step(self)
 
         return cycles
     
