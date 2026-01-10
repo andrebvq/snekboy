@@ -41,8 +41,10 @@ class Joypad:
         self.dpad_right = False
 
         # P1 register state
-        self.select_buttons = True   # Bit 5 (True = not selected)
-        self.select_dpad = True       # Bit 4 (True = not selected)
+        # True = this group IS selected (bit would be 0)
+        # False = this group is NOT selected (bit would be 1)
+        self.select_buttons = False   # Initially not selected
+        self.select_dpad = False      # Initially not selected
 
     def write_p1(self, value: int) -> None:
         """
@@ -53,8 +55,9 @@ class Joypad:
         Bit 4 = 0: Select direction keys (Up, Down, Left, Right)
         """
         # Only bits 4-5 are writable
-        self.select_buttons = (value & 0x20) != 0  # Bit 5
-        self.select_dpad = (value & 0x10) != 0     # Bit 4
+        # Note: bit = 0 means selected, so we invert the logic
+        self.select_buttons = (value & 0x20) == 0  # Bit 5 = 0 means buttons selected
+        self.select_dpad = (value & 0x10) == 0     # Bit 4 = 0 means dpad selected
 
     def read_p1(self) -> int:
         """
@@ -63,51 +66,44 @@ class Joypad:
         Returns current button states based on selected group
         Bits 0-3 contain button state (0 = pressed, 1 = not pressed)
         """
-        # Start with bits 4-5 reflecting current selection
-        result = 0xC0  # Bits 6-7 are always 1
+        # Start with bits 6-7 always 1, bits 0-3 default to 1 (not pressed)
+        result = 0xC0  # 11000000
 
-        # Set selection bits (what we're currently selecting)
-        if self.select_buttons:
+        # Set selection bits to reflect what's NOT selected
+        # (remember: 0 = selected, 1 = not selected)
+        if not self.select_buttons:
             result |= 0x20  # Bit 5 = 1 (buttons not selected)
-        if self.select_dpad:
+        if not self.select_dpad:
             result |= 0x10  # Bit 4 = 1 (dpad not selected)
 
         # Return button states based on what's selected
         # Note: 0 = pressed, 1 = not pressed (inverted)
 
-        if not self.select_buttons:
-            # Button keys selected
-            # Bit 3: Start
-            # Bit 2: Select
-            # Bit 1: B
-            # Bit 0: A
-            result |= (0 if self.button_start else 0x08)  # Bit 3
-            result |= (0 if self.button_select else 0x04) # Bit 2
-            result |= (0 if self.button_b else 0x02)      # Bit 1
-            result |= (0 if self.button_a else 0x01)      # Bit 0
-
-        if not self.select_dpad:
-            # Direction keys selected
-            # Bit 3: Down
-            # Bit 2: Up
-            # Bit 1: Left
-            # Bit 0: Right
-            result |= (0 if self.dpad_down else 0x08)   # Bit 3
-            result |= (0 if self.dpad_up else 0x04)     # Bit 2
-            result |= (0 if self.dpad_left else 0x02)   # Bit 1
-            result |= (0 if self.dpad_right else 0x01)  # Bit 0
-
-        # If both selected (both bits 0), return OR of both groups
-        if not self.select_buttons and not self.select_dpad:
-            result = 0xC0
+        # Check which group(s) are selected
+        if self.select_buttons and self.select_dpad:
+            # Both selected: OR of both groups
             result |= (0 if (self.button_start or self.dpad_down) else 0x08)
             result |= (0 if (self.button_select or self.dpad_up) else 0x04)
             result |= (0 if (self.button_b or self.dpad_left) else 0x02)
             result |= (0 if (self.button_a or self.dpad_right) else 0x01)
 
-        # If neither selected (both bits 1), return all 1s (no buttons pressed)
-        if self.select_buttons and self.select_dpad:
-            result |= 0x0F  # All buttons read as not pressed
+        elif self.select_buttons:
+            # Only button keys selected
+            result |= (0 if self.button_start else 0x08)  # Bit 3: Start
+            result |= (0 if self.button_select else 0x04) # Bit 2: Select
+            result |= (0 if self.button_b else 0x02)      # Bit 1: B
+            result |= (0 if self.button_a else 0x01)      # Bit 0: A
+
+        elif self.select_dpad:
+            # Only direction keys selected
+            result |= (0 if self.dpad_down else 0x08)   # Bit 3: Down
+            result |= (0 if self.dpad_up else 0x04)     # Bit 2: Up
+            result |= (0 if self.dpad_left else 0x02)   # Bit 1: Left
+            result |= (0 if self.dpad_right else 0x01)  # Bit 0: Right
+
+        else:
+            # Neither selected - return all buttons as not pressed
+            result |= 0x0F
 
         return result
 

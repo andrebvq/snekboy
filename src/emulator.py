@@ -6,6 +6,10 @@ from src.cpu import CPU
 from src.display import Display
 import time
 
+a = r"C:\Users\andre\OneDrive\Desktop\gb\Tetris (World) (Rev 1)\Tetris (World) (Rev 1).gb"
+b = r"C:\Users\andre\OneDrive\Desktop\gb\Super Mario Land (World)\Super Mario Land (World).gb"
+c = r"C:\Users\andre\OneDrive\Desktop\gb\Alleyway (World)\Alleyway (World).gb"
+
 class Emulator:
     """Game Boy Emulator with display"""
 
@@ -14,7 +18,7 @@ class Emulator:
     # 4194304 / 59.7 ≈ 70224 cycles per frame
     CYCLES_PER_FRAME = 70224
 
-    def __init__(self, rom_path=r"C:\Users\andre\OneDrive\Desktop\gb\Tetris (World) (Rev 1)\Tetris (World) (Rev 1).gb"):
+    def __init__(self, rom_path=a):
         """
         Initialize emulator
 
