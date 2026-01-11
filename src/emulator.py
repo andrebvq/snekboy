@@ -4,6 +4,7 @@ Main emulator loop with display
 
 from src.cpu import CPU
 from src.display import Display
+from src.tracer import Tracer
 import time
 
 a = r"C:\Users\andre\OneDrive\Desktop\gb\Tetris (World) (Rev 1)\Tetris (World) (Rev 1).gb"
@@ -18,24 +19,105 @@ class Emulator:
     # 4194304 / 59.7 ≈ 70224 cycles per frame
     CYCLES_PER_FRAME = 70224
 
-    def __init__(self, rom_path=a):
+    def __init__(self, rom_path=a, enable_tracing=True, trace_file="tracing/tracing.txt"):
         """
         Initialize emulator
 
         Args:
             rom_path: Optional path to ROM file to load
+            enable_tracing: Enable execution tracing to tracing.txt
+            trace_file: Path to trace file (default: tracing.txt in current directory)
         """
+        # Initialize tracer FIRST before anything that might fail
+        import os
+        # Make trace_file path relative to project root (parent of src/)
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        trace_path = os.path.join(project_root, trace_file)
+        # FORCE tracing to be enabled regardless of parameter
+        enable_tracing = True
+        print(f"[TRACE DEBUG] Initializing tracer...")
+        print(f"[TRACE DEBUG] Project root: {project_root}")
+        print(f"[TRACE DEBUG] Trace file path: {trace_path}")
+        print(f"[TRACE DEBUG] Tracing enabled: {enable_tracing}")
+        self.tracer = Tracer(trace_path, enabled=enable_tracing)
+        print(f"[TRACE DEBUG] Tracer created: {self.tracer}")
+        print(f"[TRACE DEBUG] Tracer file handle: {self.tracer.file}")
+        self.enable_tracing = enable_tracing
+        self.trace_file = trace_path
+
+        # Tracing state
+        self.vram_write_count = 0
+        self.ly_read_count = 0
+        self.last_lcdc = 0x00
+
+        # Now initialize CPU and display
         self.cpu = CPU()
         self.display = Display()
         self.running = False
 
+        if self.enable_tracing:
+            self._setup_tracing()
+
         if rom_path:
             self.load_rom(rom_path)
+
+    def _setup_tracing(self):
+        """Setup memory tracing hooks"""
+        # Save original methods
+        self.original_read = self.cpu.memory.read_byte
+        self.original_write = self.cpu.memory.write_byte
+
+        # Create traced versions
+        def traced_read(address):
+            result = self.original_read(address)
+
+            # Log LY reads (sample every 1000th to avoid spam)
+            if address == 0xFF44:
+                self.ly_read_count += 1
+                if self.ly_read_count % 1000 == 0:
+                    self.tracer.log_ly_read(self.cpu.total_cycles, self.cpu.registers._pc, result)
+
+            return result
+
+        def traced_write(address, value):
+            # Log LCDC writes (LCD ON/OFF transitions)
+            if address == 0xFF40:
+                if value != self.last_lcdc:
+                    self.tracer.log_lcdc_write(self.cpu.total_cycles, self.cpu.registers._pc, value)
+                    self.last_lcdc = value
+
+            # Log VRAM writes (non-zero only, sample to avoid spam)
+            if 0x8000 <= address <= 0x9FFF and value != 0x00:
+                self.vram_write_count += 1
+                # Log first 100, then every 100th
+                if self.vram_write_count <= 100 or self.vram_write_count % 100 == 0:
+                    self.tracer.log_vram_write(self.cpu.total_cycles, self.cpu.registers._pc, address, value)
+
+            # Log DMA triggers
+            if address == 0xFF46:
+                self.tracer.log_dma_trigger(self.cpu.total_cycles, self.cpu.registers._pc, value)
+
+            return self.original_write(address, value)
+
+        # Replace methods
+        self.cpu.memory.read_byte = traced_read
+        self.cpu.memory.write_byte = traced_write
 
     def load_rom(self, rom_path):
         """Load a ROM file"""
         print(f"Loading ROM: {rom_path}")
         self.cpu.memory.load_rom_file(rom_path)
+
+        # Simulate boot ROM
+        self.cpu.simulate_boot()
+
+        if self.enable_tracing:
+            self.tracer.log_section("ROM LOADED AND BOOT ROM SIMULATED")
+            self.tracer.log_state(self.cpu.total_cycles,
+                                self.cpu.memory.read_byte(0xFF44),
+                                self.cpu.memory.read_byte(0xFF40),
+                                self.cpu.registers._pc)
+
         print("ROM loaded successfully")
 
     def run(self):
@@ -45,11 +127,22 @@ class Emulator:
         start_time = time.time()
 
         print("Starting emulator...")
+        if self.enable_tracing:
+            print(f"Tracing enabled - logging to: {self.trace_file}")
+            # Immediately log startup info to ensure file has content
+            self.tracer.log_section("EMULATOR STARTED")
+            self.tracer.log(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            self.tracer.log(f"Trace file: {self.trace_file}")
+            self.tracer.log("")
+
         print("Controls:")
         print("  A/B/Start/Select: A, S, Z, X")
         print("  D-Pad (Up/Down/Left/Right): I, K, J, L")
         print("  Quit: ESC")
         print()
+
+        # Track VBlank for logging
+        last_if = self.cpu.memory._data[0xFF0F] if hasattr(self.cpu.memory, '_data') else 0
 
         while self.running:
             # Handle events (keyboard, quit, etc.) and update joypad
@@ -83,16 +176,41 @@ class Emulator:
             # Limit to 60 FPS
             self.display.limit_fps()
 
+            # Track VBlank for logging
+            if self.enable_tracing and hasattr(self.cpu.memory, '_data'):
+                current_if = self.cpu.memory._data[0xFF0F]
+                if (current_if & 0x01) and not (last_if & 0x01):
+                    # VBlank just fired, log every 60th (once per second)
+                    if frame_count % 60 == 0:
+                        self.tracer.log_vblank(self.cpu.total_cycles)
+                last_if = current_if
+
             # Debug info every second
             frame_count += 1
             if frame_count % 60 == 0:
                 elapsed = time.time() - start_time
                 fps = self.display.get_fps()
+                ly = self.cpu.memory.read_byte(0xFF44)
+                lcdc = self.cpu.memory.read_byte(0xFF40)
+
                 print(f"FPS: {fps:.1f} | Cycles: {self.cpu.total_cycles:,} | "
-                      f"LY: {self.cpu.memory.read_byte(0xFF44)} | "
-                      f"LCDC: 0x{self.cpu.memory.read_byte(0xFF40):02X}")
+                      f"LY: {ly} | LCDC: 0x{lcdc:02X}")
+
+                # Log state to trace file
+                if self.enable_tracing:
+                    self.tracer.log_state(self.cpu.total_cycles, ly, lcdc, self.cpu.registers._pc)
 
         print("\nEmulator stopped")
+
+        # Close tracer
+        if self.enable_tracing:
+            self.tracer.log_section("EMULATOR STOPPED")
+            self.tracer.log(f"Total cycles: {self.cpu.total_cycles:,}")
+            self.tracer.log(f"Total VRAM writes: {self.vram_write_count}")
+            self.tracer.log(f"Total LY reads: {self.ly_read_count}")
+            self.tracer.close()
+            print(f"Trace file closed: {self.trace_file}")
+
         self.display.close()
 
     def run_headless(self, max_cycles=1_000_000):
@@ -136,14 +254,22 @@ if __name__ == '__main__':
 
     if len(sys.argv) > 1:
         rom_path = sys.argv[1]
-        emu = Emulator(rom_path)
+
+        # Check for --no-trace flag
+        enable_tracing = True
+        if '--no-trace' in sys.argv:
+            enable_tracing = False
+            print("Tracing disabled")
+
+        emu = Emulator(rom_path, enable_tracing=enable_tracing)
         emu.run()
     else:
-        print("Usage: python -m src.emulator <rom_file>")
+        print("Usage: python -m src.emulator <rom_file> [--no-trace]")
+        print("  --no-trace: Disable execution tracing")
         print("\nNo ROM specified, running test...")
 
         # Create test ROM with simple tile data
-        emu = Emulator()
+        emu = Emulator(enable_tracing=True)
 
         # Write some test tile data to VRAM
         # Tile 0: Checkerboard pattern

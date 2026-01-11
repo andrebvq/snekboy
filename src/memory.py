@@ -209,6 +209,27 @@ class Memory:
             self._data[address] = value
             return
 
+        # Unused I/O registers - ignore writes
+        # These registers don't exist and writes should be ignored
+        if address == 0xFF03 or (0xFF08 <= address <= 0xFF0E) or (0xFF4C <= address <= 0xFF7F):
+            # Ignore writes to unused registers
+            return
+
+        # LY register (0xFF44) - LCD Y-Coordinate (read-only)
+        if address == 0xFF44:
+            # LY is read-only, ignore writes
+            return
+
+        # LCDC register (0xFF40) - LCD Control
+        if address == 0xFF40:
+            # DEBUG: Log LCDC writes to help diagnose issues
+            if self._cpu and hasattr(self._cpu, 'registers'):
+                # Only log if value has changed to reduce spam
+                if self._data[0xFF40] != value:
+                    pass  # Can enable debug logging here if needed
+            self._data[address] = value
+            return
+
         # DMA register (0xFF46) - OAM DMA transfer
         if address == 0xFF46:
             # Start DMA transfer from (value << 8) to OAM (0xFE00-0xFE9F)

@@ -92,15 +92,33 @@ class PPU:
         """
         # Check if LCD is enabled
         lcdc = self.memory.read_byte(0xFF40)
+        ly = self.memory.read_byte(0xFF44)
+
         if not (lcdc & 0x80):  # Bit 7 = LCD enable
-            # LCD is off - reset to mode 0, LY = 0
-            self.memory._data[0xFF44] = 0  # LY
-            self._set_mode(self.MODE_HBLANK)
-            self.cycle_counter = 0
+            # LCD is off - advance cycles and LY to simulate timing, but no rendering
+            # This is critical: real hardware continues LY counter even when LCD is off
+            # Games rely on this to poll LY and detect VBlank timing
+            self.cycle_counter += cycles
+
+            while self.cycle_counter >= self.SCANLINE_CYCLES:
+                self.cycle_counter -= self.SCANLINE_CYCLES
+                ly = (ly + 1) % 154  # Wrap 0-153
+                self.memory._data[0xFF44] = ly
+                self._check_lyc_coincidence()  # Still check LYC coincidence
+
+                # Trigger VBlank interrupt when entering VBlank region, even with LCD off
+                # This is critical for games that turn off LCD and rely on VBlank for timing
+                if ly == 144:
+                    # Enter VBlank mode
+                    if self.current_mode != self.MODE_VBLANK:
+                        self._set_mode(self.MODE_VBLANK)
+                    # Trigger VBlank interrupt
+                    if self.interrupt_callback:
+                        self.interrupt_callback(0)  # VBlank interrupt (bit 0)
+
             return
 
         self.cycle_counter += cycles
-        ly = self.memory.read_byte(0xFF44)
 
         # Check which mode we're in based on current scanline and cycle count
         if ly >= 144:
@@ -451,12 +469,12 @@ class PPU:
         # Limit to 10 sprites per scanline (hardware limitation)
         sprites_on_line = sprites_on_line[:10]
 
-        # Sort by X position (lower X = higher priority)
-        # On real hardware, lower OAM index has priority, but X position is simpler
-        sprites_on_line.sort(key=lambda s: s['x'])
+        # Sort sprites by priority (lower X = higher priority, then lower OAM index = higher priority)
+        # We render in reverse order, so sort descending (highest priority last = rendered on top)
+        sprites_on_line.sort(key=lambda s: (-s['x'], -s['index']))
 
-        # Render sprites in reverse order (so first sprite is on top)
-        for sprite in reversed(sprites_on_line):
+        # Render sprites (reversed order means lowest X / lowest index renders last = on top)
+        for sprite in sprites_on_line:
             x_pos = sprite['x']
             y_pos = sprite['y']
             tile_num = sprite['tile']
