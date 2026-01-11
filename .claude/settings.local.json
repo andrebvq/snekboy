@@ -33,7 +33,8 @@
       "Bash(timeout 60 /c/msys64/ucrt64/bin/python.exe:*)",
       "Bash(timeout 120 /c/msys64/ucrt64/bin/python.exe:*)",
       "Bash(cat:*)",
-      "Bash(timeout 300 /c/msys64/ucrt64/bin/python.exe:*)"
+      "Bash(timeout 300 /c/msys64/ucrt64/bin/python.exe:*)",
+      "Bash(PYTHONPATH=. timeout 240 /c/msys64/ucrt64/bin/python.exe:*)"
     ]
   }
 }

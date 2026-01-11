@@ -61,18 +61,44 @@ class CPU(InstructionImplementations):
 
         self._initialize_state()
 
-    def _initialize_state(self):
-        """Initialize to Game Boy boot state"""
-        self.registers._a = validate_byte(self.registers._a)
-        self.registers._b = validate_byte(self.registers._b)
-        self.registers._c = validate_byte(self.registers._c)
-        self.registers._d = validate_byte(self.registers._d)
-        self.registers._e = validate_byte(self.registers._e)
-        self.registers._h = validate_byte(self.registers._h)
-        self.registers._l = validate_byte(self.registers._l)
-        self.registers._sp = validate_word(self.registers._sp)
-        self.registers._pc = validate_word(self.registers._pc)
+    def simulate_boot(self):
+        """
+        Simulate boot ROM execution
 
+        Call this after loading ROM but before starting execution.
+        Clears VRAM, initializes registers, and sets up post-boot state.
+        """
+        # Simulate boot ROM hardware initialization
+        self.memory.simulate_boot_rom()
+
+        # Re-initialize CPU to post-boot state
+        self._initialize_state()
+
+    def _initialize_state(self):
+        """
+        Initialize to post-boot ROM state (what registers contain after boot completes)
+
+        Real Game Boy boot ROM sets these values before jumping to cartridge at 0x0100:
+        - A = 0x01 (DMG), 0x11 (Game Boy Pocket), 0xFF (Game Boy Color in DMG mode)
+        - F = 0xB0 (Z=1, N=0, H=1, C=1)
+        - BC = 0x0013
+        - DE = 0x00D8
+        - HL = 0x014D
+        - SP = 0xFFFE
+        - PC = 0x0100 (cartridge entry point)
+        """
+        # Post-boot register values for DMG (original Game Boy)
+        self.registers._a = 0x01  # DMG identifier
+        self.registers._b = 0x00
+        self.registers._c = 0x13
+        self.registers._d = 0x00
+        self.registers._e = 0xD8
+        self.registers._h = 0x01
+        self.registers._l = 0x4D
+        self.registers._sp = 0xFFFE
+        self.registers._pc = 0x0100  # Start at cartridge entry point
+
+        # Flags: Z=1, N=0, H=1, C=1 (F = 0xB0)
         self.registers.flags.zero = True
         self.registers.flags.subtract = False
         self.registers.flags.half_carry = True

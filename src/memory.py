@@ -53,28 +53,51 @@ class Memory:
         # Optional: Track read/write for debugging
         self._read_count = 0
         self._write_count = 0
+
+        # OAM DMA state
+        self._dma_active = False
+        self._dma_cycles_remaining = 0
+        self._dma_source = 0
+
+        # Boot ROM state
+        self.boot_rom_enabled = True  # Boot ROM active until 0xFF50 write
+        self.cartridge_data = None  # Will store full cartridge ROM
     
     def read_byte(self, address: int) -> int:
         """Read a single byte from memory"""
         address = validate_word(address)  # Ensure 16-bit address
         self._read_count += 1
 
+        # Boot ROM mapping (0x0000-0x00FF) - active until FF50 write
+        if self.boot_rom_enabled and address < 0x0100:
+            # Boot ROM not loaded - return cartridge data
+            # Real hardware would return boot ROM here
+            if self.cartridge_data and address < len(self.cartridge_data):
+                return self.cartridge_data[address]
+            return self._data[address]
+
         # Check for OAM access restrictions during PPU modes (only for CPU reads, not PPU reads)
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
+        # BUT only when LCD is enabled (LCDC bit 7)
         if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFE9F:
             if self._cpu and hasattr(self._cpu, 'ppu'):
-                ppu_mode = self._cpu.ppu.current_mode
-                # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
-                if ppu_mode == 2 or ppu_mode == 3:
-                    return 0xFF  # Return 0xFF for blocked reads
+                lcdc = self._data[0xFF40]
+                if lcdc & 0x80:  # LCD is ON
+                    ppu_mode = self._cpu.ppu.current_mode
+                    # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
+                    if ppu_mode == 2 or ppu_mode == 3:
+                        return 0xFF  # Return 0xFF for blocked reads
 
         # Check for VRAM access restrictions during PPU Mode 3 (only for CPU reads, not PPU reads)
         # VRAM (0x8000-0x9FFF) is blocked during Mode 3 (Pixel Transfer)
+        # BUT only when LCD is enabled (LCDC bit 7)
         if not self._bypass_ppu_restrictions and 0x8000 <= address <= 0x9FFF:
             if self._cpu and hasattr(self._cpu, 'ppu'):
-                ppu_mode = self._cpu.ppu.current_mode
-                if ppu_mode == 3:  # Mode 3 = Pixel Transfer
-                    return 0xFF  # Return 0xFF for blocked reads
+                lcdc = self._data[0xFF40]
+                if lcdc & 0x80:  # LCD is ON
+                    ppu_mode = self._cpu.ppu.current_mode
+                    if ppu_mode == 3:  # Mode 3 = Pixel Transfer
+                        return 0xFF  # Return 0xFF for blocked reads
 
         # P1/JOYP register (0xFF00) - Joypad
         if address == 0xFF00:
@@ -99,20 +122,26 @@ class Memory:
 
         # Check for OAM write restrictions during PPU modes (only for CPU writes, not PPU writes)
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
+        # BUT only when LCD is enabled (LCDC bit 7)
         if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFE9F:
             if self._cpu and hasattr(self._cpu, 'ppu'):
-                ppu_mode = self._cpu.ppu.current_mode
-                # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
-                if ppu_mode == 2 or ppu_mode == 3:
-                    return  # Ignore write
+                lcdc = self._data[0xFF40]
+                if lcdc & 0x80:  # LCD is ON
+                    ppu_mode = self._cpu.ppu.current_mode
+                    # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
+                    if ppu_mode == 2 or ppu_mode == 3:
+                        return  # Ignore write
 
         # Check for VRAM write restrictions during PPU Mode 3 (only for CPU writes, not PPU writes)
         # VRAM (0x8000-0x9FFF) is blocked during Mode 3 (Pixel Transfer)
+        # BUT only when LCD is enabled (LCDC bit 7)
         if not self._bypass_ppu_restrictions and 0x8000 <= address <= 0x9FFF:
             if self._cpu and hasattr(self._cpu, 'ppu'):
-                ppu_mode = self._cpu.ppu.current_mode
-                if ppu_mode == 3:  # Mode 3 = Pixel Transfer
-                    return  # Ignore write
+                lcdc = self._data[0xFF40]
+                if lcdc & 0x80:  # LCD is ON
+                    ppu_mode = self._cpu.ppu.current_mode
+                    if ppu_mode == 3:  # Mode 3 = Pixel Transfer
+                        return  # Ignore write
 
         # P1/JOYP register (0xFF00) - Joypad
         if address == 0xFF00:
@@ -177,6 +206,26 @@ class Memory:
                 if old_and_output == 1 and new_and_output == 0:
                     self._cpu._trigger_timer_tick()
 
+            self._data[address] = value
+            return
+
+        # DMA register (0xFF46) - OAM DMA transfer
+        if address == 0xFF46:
+            # Start DMA transfer from (value << 8) to OAM (0xFE00-0xFE9F)
+            # Copies 0xA0 (160) bytes
+            self._start_oam_dma(value)
+            self._data[address] = value
+            return
+
+        # Boot ROM disable (0xFF50)
+        if address == 0xFF50:
+            if value == 0x01:
+                # Disable boot ROM - map cartridge to 0x0000-0x00FF
+                self.boot_rom_enabled = False
+                # Copy cartridge low bytes to memory
+                if self.cartridge_data:
+                    for i in range(min(0x100, len(self.cartridge_data))):
+                        self._data[i] = self.cartridge_data[i]
             self._data[address] = value
             return
 
@@ -250,9 +299,24 @@ class Memory:
     
     def load_rom(self, rom_data: bytes, offset: int = 0) -> None:
         """Load ROM data into memory at specified offset"""
+        # Save cartridge data for boot ROM handling
+        if offset == 0:
+            self.cartridge_data = bytearray(rom_data)
+
         length = min(len(rom_data), 65536 - offset)
-        self._data[offset:offset + length] = rom_data[:length]
-        print(f"Loaded {length} bytes of ROM at address 0x{offset:04X}")
+
+        # If boot ROM is enabled, only load from 0x0100 onwards
+        # The boot ROM occupies 0x0000-0x00FF
+        if self.boot_rom_enabled and offset == 0:
+            # Load cartridge from 0x0100 onwards
+            if length > 0x0100:
+                self._data[0x0100:length] = rom_data[0x0100:length]
+                print(f"Loaded {length} bytes of ROM (boot ROM active, cartridge starts at 0x0100)")
+            else:
+                print(f"ROM too small ({length} bytes)")
+        else:
+            self._data[offset:offset + length] = rom_data[:length]
+            print(f"Loaded {length} bytes of ROM at address 0x{offset:04X}")
     
     def load_rom_file(self, filepath: str) -> None:
         """Load a ROM file from disk"""
@@ -271,6 +335,115 @@ class Memory:
             )
             print(f"0x{addr:04X}: {hex_bytes:<48} | {ascii_chars}")
     
+    def simulate_boot_rom(self):
+        """
+        Simulate what the Game Boy boot ROM does:
+        1. Clear VRAM (0x8000-0x9FFF) to 0x00
+        2. Initialize hardware registers
+        3. Set up initial state for game
+
+        This is called instead of running actual boot ROM code
+        """
+        print("Simulating boot ROM sequence...")
+
+        # Clear VRAM to prevent garbage/stripes
+        for addr in range(0x8000, 0xA000):
+            self._data[addr] = 0x00
+
+        # Initialize Audio Registers (DMG boot ROM does this)
+        self._data[0xFF10] = 0x80  # NR10
+        self._data[0xFF11] = 0xBF  # NR11
+        self._data[0xFF12] = 0xF3  # NR12
+        self._data[0xFF13] = 0xFF  # NR13
+        self._data[0xFF14] = 0xBF  # NR14
+        self._data[0xFF16] = 0x3F  # NR21
+        self._data[0xFF17] = 0x00  # NR22
+        self._data[0xFF18] = 0xFF  # NR23
+        self._data[0xFF19] = 0xBF  # NR24
+        self._data[0xFF1A] = 0x7F  # NR30
+        self._data[0xFF1B] = 0xFF  # NR31
+        self._data[0xFF1C] = 0x9F  # NR32
+        self._data[0xFF1D] = 0xFF  # NR33
+        self._data[0xFF1E] = 0xBF  # NR34
+        self._data[0xFF20] = 0xFF  # NR41
+        self._data[0xFF21] = 0x00  # NR42
+        self._data[0xFF22] = 0x00  # NR43
+        self._data[0xFF23] = 0xBF  # NR44
+        self._data[0xFF24] = 0x77  # NR50
+        self._data[0xFF25] = 0xF3  # NR51
+        self._data[0xFF26] = 0xF1  # NR52
+
+        # Initialize Video Registers (DMG boot ROM does this)
+        self._data[0xFF40] = 0x91  # LCDC: LCD on, BG on
+        self._data[0xFF41] = 0x85  # STAT
+        self._data[0xFF42] = 0x00  # SCY
+        self._data[0xFF43] = 0x00  # SCX
+        self._data[0xFF45] = 0x00  # LYC
+        self._data[0xFF47] = 0xFC  # BGP (11 11 10 00)
+        self._data[0xFF4A] = 0x00  # WY
+        self._data[0xFF4B] = 0x00  # WX
+
+        # Initialize I/O Registers
+        self._data[0xFF01] = 0x00  # SB (Serial data)
+        self._data[0xFF02] = 0x7E  # SC (Serial control)
+        self._data[0xFF04] = 0xAB  # DIV (Divider, varies but use common value)
+        self._data[0xFF05] = 0x00  # TIMA (Timer counter)
+        self._data[0xFF06] = 0x00  # TMA (Timer modulo)
+        self._data[0xFF07] = 0xF8  # TAC (Timer control)
+        self._data[0xFF0F] = 0xE1  # IF (Interrupt flag)
+        self._data[0xFFFF] = 0x00  # IE (Interrupt enable)
+
+        # OBP0 and OBP1 remain uninitialized (per Pan Docs)
+        # We can set them to reasonable defaults for safety
+        # (keeping our previous values of 0xFF is fine)
+        self._data[0xFF48] = 0xFF  # OBP0
+        self._data[0xFF49] = 0xFF  # OBP1
+
+        # Clear OAM
+        for addr in range(0xFE00, 0xFEA0):
+            self._data[addr] = 0x00
+
+        # Disable boot ROM and map cartridge
+        self.boot_rom_enabled = False
+        if self.cartridge_data:
+            for i in range(min(0x100, len(self.cartridge_data))):
+                self._data[i] = self.cartridge_data[i]
+
+        # Set FF50 to indicate boot complete
+        self._data[0xFF50] = 0x01
+
+        print("Boot simulation complete - VRAM cleared, all registers initialized")
+
+    def _start_oam_dma(self, value: int):
+        """
+        Start OAM DMA transfer
+
+        Copies 160 bytes from (value << 8) to OAM (0xFE00-0xFE9F)
+        Takes 160 M-cycles (640 T-cycles) during which most memory is inaccessible
+
+        For simplicity, we do an instant copy and advance cycles
+        """
+        source_addr = value << 8  # Source is XX00-XX9F
+
+        # Copy 160 bytes (0xA0) from source to OAM
+        # Bypass PPU restrictions for this direct copy
+        old_bypass = self._bypass_ppu_restrictions
+        self._bypass_ppu_restrictions = True
+
+        for i in range(0xA0):  # 160 bytes
+            source_byte = self._data[source_addr + i]
+            self._data[0xFE00 + i] = source_byte
+
+        self._bypass_ppu_restrictions = old_bypass
+
+        # DMA takes 160 M-cycles (640 T-cycles)
+        # We could track this with _dma_active flag, but for now do instant transfer
+        # and just advance CPU cycles
+        if self._cpu:
+            # Add the DMA time to total cycles
+            # The CPU should essentially "stall" during DMA
+            self._cpu.total_cycles += 640
+
     def get_stats(self) -> dict:
         """Get memory access statistics"""
         return {

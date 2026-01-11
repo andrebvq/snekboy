@@ -1,0 +1,98 @@
+
+======================================================================
+Running: instr_timing.gb
+======================================================================
+Loaded 32768 bytes of ROM at address 0x0000
+instr_timing
+
+  2M cycles...
+Passed
+  5M cycles...  8M cycles...  11M cycles...
+✅ PASSED
+Output: instr_timingPassed
+
+======================================================================
+Running: mem_timing.gb
+======================================================================
+Loaded 65536 bytes of ROM at address 0x0000
+mem_timing
+
+  1M cycles...01  3M cycles...:01  02  4M cycles...:01  03  6M cycles...:01  
+
+Failed 3 tests.
+  9M cycles...  10M cycles...  13M cycles...  14M cycles...
+❌ FAILED
+Output: mem_timing01:01  02:01  03:01  Failed 3 tests.
+
+======================================================================
+Running: 01-read_timing.gb
+======================================================================
+Loaded 32768 bytes of ROM at address 0x0000
+01-read_timing
+
+F0:2-3 FA:2-4 CB 46:2-3 CB 4E:2-3 CB 56:2-3 CB 5E:2-3 CB 66:2-3 CB 6E:2-3 CB 76:2-3 CB 7E:2-3 
+  3M cycles...Failed
+  4M cycles...  7M cycles...  10M cycles...  13M cycles...
+❌ FAILED
+Output: 01-read_timingF0:2-3 FA:2-4 CB 46:2-3 CB 4E:2-3 CB 56:2-3 CB 5E:2-3 CB 66:2-3 CB 6E:2-3 CB 76:2-3 CB 7E:2-3 Failed
+
+======================================================================
+Running: 02-write_timing.gb
+======================================================================
+Loaded 32768 bytes of ROM at address 0x0000
+02-write_timing
+
+36:2-3 E0:2-3 EA:2-4 
+  2M cycles...Failed
+  3M cycles...  6M cycles...  9M cycles...  12M cycles...
+❌ FAILED
+Output: 02-write_timing36:2-3 E0:2-3 EA:2-4 Failed
+
+======================================================================
+Running: 03-modify_timing.gb
+======================================================================
+Loaded 32768 bytes of ROM at address 0x0000
+03-modify_timing
+
+  1M cycles...35:0/0-2/3
+34:0/0-2/3
+CB 06:0/0-3/4
+CB 0E:0/0-3/4
+CB 16:0/0-3/4
+CB 1E:0/0-3/4
+CB 26:0/0-3/4
+CB 2E:0/0-3/4
+CB 36:0/0-3/4
+CB 3E:0/0-3/4
+CB 86:0/0-3/4
+C  4M cycles...B 8E:0/0-3/4
+CB 96:0/0-3/4
+CB 9E:0/0-3/4
+CB A6:0/0-3/4
+CB AE:0/0-3/4
+  5M cycles...CB B6:0/0-3/4
+CB BE:0/0-3/4
+CB C6:0/0-3/4
+CB CE:0/0-3/4
+CB D6:0/0-3  6M cycles.../4
+CB DE:0/0-3/4
+CB E6:0/0-3/4
+CB EE:0/0-3/4
+CB F6:0/0-3/4
+CB FE:  7M cycles...0/0-3/4
+
+Failed
+  10M cycles...  13M cycles...  16M cycles...
+❌ FAILED
+Output: 03-modify_timing35:0/0-2/334:0/0-2/3CB 06:0/0-3/4CB 0E:0/0-3/4CB 16:0/0-3/4CB 1E:0/0-3/4CB 26:0/0-3/4CB 2E:0/0-3/4CB 36:0/0-3/4CB 3E:0/0-3/4CB 86:0/0-3/4CB 8E:0/0-3/4CB 96:0/0-3/4CB 9E:0/0-3/4CB A6:0/
+
+======================================================================
+SUMMARY
+======================================================================
+✅ instr_timing.gb
+❌ mem_timing.gb
+❌ 01-read_timing.gb
+❌ 02-write_timing.gb
+❌ 03-modify_timing.gb
+
+1/5 tests passed

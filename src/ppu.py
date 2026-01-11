@@ -116,7 +116,7 @@ class PPU:
                 if ly > 153:
                     # End of frame, restart
                     ly = 0
-                    self._set_mode(self.MODE_OAM_SEARCH)
+                    self._enter_oam_search()
 
                 self.memory._data[0xFF44] = ly
                 self._check_lyc_coincidence()
@@ -126,13 +126,13 @@ class PPU:
             if self.cycle_counter <= self.MODE_2_CYCLES:
                 # Mode 2: OAM Search
                 if self.current_mode != self.MODE_OAM_SEARCH:
-                    self._set_mode(self.MODE_OAM_SEARCH)
+                    self._enter_oam_search()
 
             elif self.cycle_counter <= (self.MODE_2_CYCLES + self.MODE_3_CYCLES):
                 # Mode 3: Pixel Transfer
                 if self.current_mode != self.MODE_PIXEL_TRANSFER:
+                    # Entering mode 3 - render scanline once
                     self._set_mode(self.MODE_PIXEL_TRANSFER)
-                    # Render this scanline
                     self._render_scanline(ly)
 
             else:
@@ -152,7 +152,7 @@ class PPU:
                         self._enter_vblank()
                     else:
                         # Next scanline starts with OAM search
-                        self._set_mode(self.MODE_OAM_SEARCH)
+                        self._enter_oam_search()
 
     def _set_mode(self, mode: int):
         """Set PPU mode and update STAT register"""
@@ -186,6 +186,16 @@ class PPU:
             if self.interrupt_callback:
                 self.interrupt_callback(1)  # STAT interrupt
 
+    def _enter_oam_search(self):
+        """Enter OAM Search mode and potentially request STAT interrupt"""
+        self._set_mode(self.MODE_OAM_SEARCH)
+
+        # Check for OAM Search STAT interrupt (bit 5 of STAT)
+        stat = self.memory.read_byte(0xFF41)
+        if stat & 0x20:  # OAM interrupt enabled
+            if self.interrupt_callback:
+                self.interrupt_callback(1)  # STAT interrupt
+
     def _check_lyc_coincidence(self):
         """Check if LY == LYC and set coincidence flag"""
         ly = self.memory.read_byte(0xFF44)
@@ -208,13 +218,32 @@ class PPU:
 
     def _render_scanline(self, ly: int):
         """
-        Render a single scanline (background only for now)
+        Render a single scanline (background + window + sprites)
 
         Args:
             ly: Current scanline number (0-143)
         """
         lcdc = self.memory.read_byte(0xFF40)
 
+        # Render background first
+        self._render_background_scanline(ly, lcdc)
+
+        # Render window on top of background (if enabled)
+        if lcdc & 0x20:  # Bit 5 = window enable
+            self._render_window_scanline(ly, lcdc)
+
+        # Render sprites on top (if enabled)
+        if lcdc & 0x02:  # Bit 1 = sprite enable
+            self._render_sprites_scanline(ly, lcdc)
+
+    def _render_background_scanline(self, ly: int, lcdc: int):
+        """
+        Render background for a single scanline
+
+        Args:
+            ly: Current scanline number (0-143)
+            lcdc: LCD control register value
+        """
         # Check if background is enabled (bit 0)
         if not (lcdc & 0x01):
             # Background disabled - render blank line
@@ -290,6 +319,220 @@ class PPU:
 
             # Store in screen buffer
             self.screen_buffer[ly][x] = color
+
+    def _render_window_scanline(self, ly: int, lcdc: int):
+        """
+        Render window for a single scanline
+
+        The window is an alternative background area that is displayed on top of the background.
+        It has no transparency - it always covers the background.
+
+        Args:
+            ly: Current scanline number (0-143)
+            lcdc: LCD control register value
+        """
+        # Get window position
+        wy = self.memory.read_byte(0xFF4A)  # Window Y position
+        wx = self.memory.read_byte(0xFF4B)  # Window X position minus 7
+
+        # Check if window is visible on this scanline
+        if ly < wy:
+            return  # Window hasn't started yet
+
+        # Window tile map: bit 6 of LCDC
+        # 0 = 0x9800-0x9BFF, 1 = 0x9C00-0x9FFF
+        tile_map_base = 0x9C00 if (lcdc & 0x40) else 0x9800
+
+        # Window uses same tile data as background (bit 4 of LCDC)
+        tile_data_base = 0x8000 if (lcdc & 0x10) else 0x8800
+        use_signed = not (lcdc & 0x10)
+
+        # Window internal line counter (which line of window we're rendering)
+        window_y = ly - wy
+
+        # Which tile row in window
+        tile_row = window_y // 8
+
+        # Which line within that tile
+        tile_line = window_y % 8
+
+        # Render window pixels
+        # WX=7 means window starts at screen X=0
+        # WX=0 means window starts at screen X=-7 (off screen)
+        window_x_start = max(0, wx - 7)
+
+        for x in range(window_x_start, self.SCREEN_WIDTH):
+            # X position within window (0-based)
+            window_x = x - window_x_start
+
+            # Which tile column
+            tile_col = window_x // 8
+
+            # Which pixel within tile
+            tile_pixel = window_x % 8
+
+            # Get tile number from tile map
+            tile_map_addr = tile_map_base + (tile_row * 32) + tile_col
+
+            # PPU needs unrestricted access to VRAM
+            self.memory._bypass_ppu_restrictions = True
+            tile_num = self.memory.read_byte(tile_map_addr)
+
+            # Calculate tile data address
+            if use_signed:
+                if tile_num > 127:
+                    tile_num = tile_num - 256
+                tile_addr = tile_data_base + (tile_num * 16) + (tile_line * 2)
+            else:
+                tile_addr = tile_data_base + (tile_num * 16) + (tile_line * 2)
+
+            # Read tile data
+            byte1 = self.memory.read_byte(tile_addr)
+            byte2 = self.memory.read_byte(tile_addr + 1)
+            self.memory._bypass_ppu_restrictions = False
+
+            # Get color index
+            bit_pos = 7 - tile_pixel
+            color_bit_low = (byte1 >> bit_pos) & 1
+            color_bit_high = (byte2 >> bit_pos) & 1
+            color_index = (color_bit_high << 1) | color_bit_low
+
+            # Apply background palette (window uses same palette as background)
+            bgp = self.memory.read_byte(0xFF47)
+            color = (bgp >> (color_index * 2)) & 0x03
+
+            # Window overwrites background
+            self.screen_buffer[ly][x] = color
+
+    def _render_sprites_scanline(self, ly: int, lcdc: int):
+        """
+        Render sprites for a single scanline
+
+        Args:
+            ly: Current scanline number (0-143)
+            lcdc: LCD control register value
+        """
+        # Sprite size: bit 2 of LCDC (0 = 8x8, 1 = 8x16)
+        sprite_height = 16 if (lcdc & 0x04) else 8
+
+        # OAM is at 0xFE00-0xFE9F (160 bytes = 40 sprites, 4 bytes each)
+        # Sprite attributes:
+        # Byte 0: Y position (minus 16)
+        # Byte 1: X position (minus 8)
+        # Byte 2: Tile number
+        # Byte 3: Flags (priority, Y flip, X flip, palette)
+
+        sprites_on_line = []
+
+        # Scan all 40 sprites
+        self.memory._bypass_ppu_restrictions = True
+        for sprite_index in range(40):
+            oam_addr = 0xFE00 + (sprite_index * 4)
+
+            y_pos = self.memory.read_byte(oam_addr + 0)
+            x_pos = self.memory.read_byte(oam_addr + 1)
+            tile_num = self.memory.read_byte(oam_addr + 2)
+            flags = self.memory.read_byte(oam_addr + 3)
+
+            # Adjust positions (hardware stores Y-16, X-8)
+            y_pos = y_pos - 16
+            x_pos = x_pos - 8
+
+            # Check if sprite is on this scanline
+            if ly >= y_pos and ly < y_pos + sprite_height:
+                sprites_on_line.append({
+                    'x': x_pos,
+                    'y': y_pos,
+                    'tile': tile_num,
+                    'flags': flags,
+                    'index': sprite_index
+                })
+
+        # Limit to 10 sprites per scanline (hardware limitation)
+        sprites_on_line = sprites_on_line[:10]
+
+        # Sort by X position (lower X = higher priority)
+        # On real hardware, lower OAM index has priority, but X position is simpler
+        sprites_on_line.sort(key=lambda s: s['x'])
+
+        # Render sprites in reverse order (so first sprite is on top)
+        for sprite in reversed(sprites_on_line):
+            x_pos = sprite['x']
+            y_pos = sprite['y']
+            tile_num = sprite['tile']
+            flags = sprite['flags']
+
+            # Parse flags
+            priority = (flags >> 7) & 1  # 0 = sprite above BG, 1 = sprite behind BG colors 1-3
+            y_flip = (flags >> 6) & 1
+            x_flip = (flags >> 5) & 1
+            palette_num = (flags >> 4) & 1  # 0 = OBP0, 1 = OBP1
+
+            # Get palette
+            palette_addr = 0xFF48 if palette_num == 0 else 0xFF49
+            palette = self.memory.read_byte(palette_addr)
+
+            # Calculate which line of the sprite we're rendering
+            sprite_line = ly - y_pos
+
+            # Handle Y flip
+            if y_flip:
+                sprite_line = (sprite_height - 1) - sprite_line
+
+            # For 8x16 sprites, tile_num uses bit 0 to select top/bottom tile
+            if sprite_height == 16:
+                if sprite_line >= 8:
+                    tile_num = (tile_num & 0xFE) | 0x01  # Bottom tile
+                    sprite_line -= 8
+                else:
+                    tile_num = tile_num & 0xFE  # Top tile
+
+            # Sprites always use 0x8000 addressing mode
+            tile_addr = 0x8000 + (tile_num * 16) + (sprite_line * 2)
+
+            # Read tile data
+            byte1 = self.memory.read_byte(tile_addr)
+            byte2 = self.memory.read_byte(tile_addr + 1)
+
+            # Render each pixel of the sprite
+            for pixel_x in range(8):
+                screen_x = x_pos + pixel_x
+
+                # Skip if off-screen
+                if screen_x < 0 or screen_x >= self.SCREEN_WIDTH:
+                    continue
+
+                # Get bit position (handle X flip)
+                if x_flip:
+                    bit_pos = pixel_x
+                else:
+                    bit_pos = 7 - pixel_x
+
+                # Get color index
+                color_bit_low = (byte1 >> bit_pos) & 1
+                color_bit_high = (byte2 >> bit_pos) & 1
+                color_index = (color_bit_high << 1) | color_bit_low
+
+                # Color 0 is transparent for sprites
+                if color_index == 0:
+                    continue
+
+                # Get background color at this position
+                bg_color_index = self.screen_buffer[ly][screen_x]
+
+                # Check priority
+                if priority == 1:
+                    # Sprite is behind background colors 1-3
+                    if bg_color_index != 0:
+                        continue  # Don't draw sprite pixel
+
+                # Apply sprite palette
+                color = (palette >> (color_index * 2)) & 0x03
+
+                # Draw sprite pixel
+                self.screen_buffer[ly][screen_x] = color
+
+        self.memory._bypass_ppu_restrictions = False
 
     def get_screen_buffer(self):
         """
