@@ -4,17 +4,47 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snekboy"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Game Boy emulator in Python"
-requires-python = ">=3.8"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Andre", email = "noreply@example.com"}
+]
+keywords = ["gameboy", "emulator", "dmg", "gaming"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Games/Entertainment",
+    "Topic :: System :: Emulators",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
 dependencies = [
     "pygame>=2.0.0",
-    "numpy>=1.20.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/snekboy"
+Documentation = "https://github.com/yourusername/snekboy/blob/main/README.md"
+Repository = "https://github.com/yourusername/snekboy"
+"Bug Tracker" = "https://github.com/yourusername/snekboy/issues"
+
+# Entry point uses __main__ block in emulator.py
+# Run with: python -m src.emulator
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
+exclude = ["tests*", "tools*", "docs*"]
 
 [tool.setuptools.package-data]
-src = ["**/*"]
+src = ["**/*.py"]

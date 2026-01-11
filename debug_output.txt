@@ -1,3 +1,0 @@
-Loading ROM: C:\Users\andre\OneDrive\Desktop\gb\Super Mario Land (World)\Super Mario Land (World).gb
-Loaded 65536 bytes of ROM at address 0x0000
-ROM loaded
