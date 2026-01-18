@@ -1,4 +1,4 @@
-# SnekBoy
+# SnekBoy v0.1
 
 A Game Boy (DMG) emulator written in Python, implementing the complete Sharp LR35902 CPU instruction set and core hardware components.
 
@@ -276,7 +276,7 @@ MIT License - See LICENSE file for details.
 
 ## Development Status
 
-Current version: 1.0.0 (Beta)
+Current version: 0.1.0 (Pre-Alpha)
 
 Core systems are complete and functional. The emulator passes standard test suites (Blargg's cpu_instrs and instr_timing). Game compatibility is limited due to bugs in stage transition handling that are being researched. Tetris boots and navigates menus but crashes when loading stages. Audio (APU) and Memory Bank Controllers (MBC) are not yet implemented.
 
