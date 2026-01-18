@@ -167,17 +167,17 @@ This creates `test_roms/` directory with:
 
 ## Current Test Status
 
-### Passing Tests ✅
+### Passing Tests
 - Test 01: Special instructions
 - Test 02: Interrupts
 - All unit tests (CPU, memory, timer, interrupts, joypad)
 
-### Failing Tests ❌
+### Failing Tests
 - Test 03: OP SP,HL (times out)
 - Tests 04-11: Not yet attempted
 
 ### Known Issues
-- Test 03 timeout - see `DEBUGGING_SESSION.md` for investigation details
+- Test 03 timeout - see development.md for investigation details
 - Likely related to `ADD SP,e` or `LD HL,SP+e` flag calculations
 
 ---
@@ -214,6 +214,5 @@ python tests/run_blargg_tests.py
 
 ## Additional Resources
 
-- `PROJECT_STATUS.md` - Current project status and known issues
-- `DEBUGGING_SESSION.md` - Complete debugging history
+- `docs/development.md` - Current project status and known issues
 - `docs/` - Implementation details for each component

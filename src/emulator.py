@@ -7,10 +7,6 @@ from src.display import Display
 from src.tracer import Tracer
 import time
 
-a = r"C:\Users\andre\OneDrive\Desktop\gb\Tetris (World) (Rev 1)\Tetris (World) (Rev 1).gb"
-b = r"C:\Users\andre\OneDrive\Desktop\gb\Super Mario Land (World)\Super Mario Land (World).gb"
-c = r"C:\Users\andre\OneDrive\Desktop\gb\Alleyway (World)\Alleyway (World).gb"
-
 class Emulator:
     """Game Boy Emulator with display"""
 
@@ -19,7 +15,7 @@ class Emulator:
     # 4194304 / 59.7 ≈ 70224 cycles per frame
     CYCLES_PER_FRAME = 70224
 
-    def __init__(self, rom_path=a, enable_tracing=True, trace_file="tracing/tracing.txt"):
+    def __init__(self, rom_path=None, enable_tracing=True, trace_file="tracing/tracing.txt"):
         """
         Initialize emulator
 
@@ -28,20 +24,10 @@ class Emulator:
             enable_tracing: Enable execution tracing to tracing.txt
             trace_file: Path to trace file (default: tracing.txt in current directory)
         """
-        # Initialize tracer FIRST before anything that might fail
         import os
-        # Make trace_file path relative to project root (parent of src/)
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         trace_path = os.path.join(project_root, trace_file)
-        # FORCE tracing to be enabled regardless of parameter
-        enable_tracing = True
-        print(f"[TRACE DEBUG] Initializing tracer...")
-        print(f"[TRACE DEBUG] Project root: {project_root}")
-        print(f"[TRACE DEBUG] Trace file path: {trace_path}")
-        print(f"[TRACE DEBUG] Tracing enabled: {enable_tracing}")
         self.tracer = Tracer(trace_path, enabled=enable_tracing)
-        print(f"[TRACE DEBUG] Tracer created: {self.tracer}")
-        print(f"[TRACE DEBUG] Tracer file handle: {self.tracer.file}")
         self.enable_tracing = enable_tracing
         self.trace_file = trace_path
 
@@ -71,7 +57,6 @@ class Emulator:
         def traced_read(address):
             result = self.original_read(address)
 
-            # Log LY reads (sample every 1000th to avoid spam)
             if address == 0xFF44:
                 self.ly_read_count += 1
                 if self.ly_read_count % 1000 == 0:
@@ -80,20 +65,16 @@ class Emulator:
             return result
 
         def traced_write(address, value):
-            # Log LCDC writes (LCD ON/OFF transitions)
             if address == 0xFF40:
                 if value != self.last_lcdc:
                     self.tracer.log_lcdc_write(self.cpu.total_cycles, self.cpu.registers._pc, value)
                     self.last_lcdc = value
 
-            # Log VRAM writes (non-zero only, sample to avoid spam)
             if 0x8000 <= address <= 0x9FFF and value != 0x00:
                 self.vram_write_count += 1
-                # Log first 100, then every 100th
                 if self.vram_write_count <= 100 or self.vram_write_count % 100 == 0:
                     self.tracer.log_vram_write(self.cpu.total_cycles, self.cpu.registers._pc, address, value)
 
-            # Log DMA triggers
             if address == 0xFF46:
                 self.tracer.log_dma_trigger(self.cpu.total_cycles, self.cpu.registers._pc, value)
 

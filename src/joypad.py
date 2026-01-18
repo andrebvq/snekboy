@@ -70,15 +70,14 @@ class Joypad:
         result = 0xCF  # 11001111 (all buttons not pressed by default)
 
         # Set selection bits to reflect what's NOT selected
-        # (remember: 0 = selected, 1 = not selected)
+        # 0 = selected, 1 = not selected
         if not self.select_buttons:
             result |= 0x20  # Bit 5 = 1 (buttons not selected)
         if not self.select_dpad:
             result |= 0x10  # Bit 4 = 1 (dpad not selected)
 
-        # Return button states based on what's selected
-        # Note: 0 = pressed, 1 = not pressed (inverted)
-        # Use &= to CLEAR bits for pressed buttons (set to 0)
+        # Return button states: 0 = pressed, 1 = not pressed
+        # Clear bits for pressed buttons (set to 0)
 
         # Check which group(s) are selected
         if self.select_buttons and self.select_dpad:

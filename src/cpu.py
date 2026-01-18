@@ -436,17 +436,10 @@ class CPU(InstructionImplementations):
             prev_counter = self._system_counter
             self._system_counter = (self._system_counter + 4) & 0xFFFF
 
-            # Update DIV register (bits 13-6 of system counter, displayed as bits 7-0 of DIV)
-            # DIV should increment every 256 T-cycles (64 M-cycles)
+            # Update DIV register (increments every 256 T-cycles)
             # System counter bits: [15:14][13:6][5:0]
-            #                              ^^^^^^ these 8 bits are DIV
-            # So DIV = (system_counter >> 6) & 0xFF, but we need to verify this gives us
-            # one increment per 64 M-cycles
-            # After 64 M-cycles: system_counter = 256 (0x100)
-            # 0x100 >> 6 = 4, but we want 1!
-            # The issue is the bit mapping. Let me use a simpler approach:
-            # DIV increments when system_counter crosses a 256 T-cycle boundary
-            # So DIV = system_counter / 256
+            # DIV uses bits 13-6 of system counter
+            # DIV = system_counter / 256
             self.memory._data[0xFF04] = (self._system_counter // 256) & 0xFF
 
             # Check if timer is enabled

@@ -4,23 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snekboy"
-version = "0.2.0"
-description = "A Game Boy emulator in Python"
+version = "1.0.0"
+description = "Game Boy (DMG) emulator written in Python"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Andre", email = "noreply@example.com"}
+    {name = "Andre"}
 ]
-keywords = ["gameboy", "emulator", "dmg", "gaming"]
+keywords = ["gameboy", "emulator", "dmg", "retro", "gaming"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "Intended Audience :: Education",
     "Topic :: Games/Entertainment",
     "Topic :: System :: Emulators",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
 ]
 
 dependencies = [
@@ -33,8 +38,6 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/snekboy"
-Documentation = "https://github.com/yourusername/snekboy/blob/main/README.md"
 Repository = "https://github.com/yourusername/snekboy"
 "Bug Tracker" = "https://github.com/yourusername/snekboy/issues"
 
