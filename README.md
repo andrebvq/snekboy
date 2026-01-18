@@ -274,14 +274,6 @@ Special thanks to all contributors to the Game Boy emulation and homebrew commun
 
 MIT License - See LICENSE file for details.
 
-## Contributing
-
-Contributions are welcome. Please:
-1. Read `docs/development.md` for implementation details
-2. Run tests to verify current state
-3. Check known issues before starting work
-4. Submit pull requests with clear descriptions
-
 ## Development Status
 
 Current version: 1.0.0 (Beta)
