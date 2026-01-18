@@ -38,8 +38,7 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/yourusername/snekboy"
-"Bug Tracker" = "https://github.com/yourusername/snekboy/issues"
+Repository = "https://github.com/andrebvq/snekboy"
 
 # Entry point uses __main__ block in emulator.py
 # Run with: python -m src.emulator

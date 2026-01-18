@@ -7,6 +7,7 @@ from src.display import Display
 from src.tracer import Tracer
 import time
 
+
 class Emulator:
     """Game Boy Emulator with display"""
 
