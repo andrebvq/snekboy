@@ -1,8 +1,8 @@
 # Game Boy Opcode Quick Reference
 
-Quick lookup for implementing missing opcodes as Blargg finds them.
+Quick lookup for opcode implementations.
 
-## Control Flow (You'll need these next!)
+## Control Flow
 
 ### JP - Unconditional Jump
 ```python

@@ -4,7 +4,7 @@ A Game Boy (DMG) emulator written in Python, implementing the complete Sharp LR3
 
 ## Overview
 
-SnekBoy is a Game Boy emulator that accurately emulates the original Game Boy hardware, including CPU, PPU (graphics), timer system, joypad input, and interrupt handling. The emulator passes Blargg's cpu_instrs and instr_timing test suites and is capable of running commercial Game Boy games.
+SnekBoy is a Game Boy emulator that aims to accurately emulate the original Game Boy hardware, including CPU, PPU (graphics), timer system, joypad input, and interrupt handling. The emulator passes Blargg's cpu_instrs and instr_timing test suites. While core systems are functional, there are known bugs preventing full game compatibility that are currently being investigated.
 
 ## Features
 
@@ -282,6 +282,6 @@ Contributions are welcome. Please:
 
 Current version: 1.0.0 (Beta)
 
-Core systems are complete and functional. The emulator successfully runs commercial Game Boy games and passes standard test suites. Audio (APU) and Memory Bank Controllers (MBC) are not yet implemented.
+Core systems are complete and functional. The emulator passes standard test suites (Blargg's cpu_instrs and instr_timing). Game compatibility is limited due to bugs in stage transition handling that are being researched. Tetris boots and navigates menus but crashes when loading stages. Audio (APU) and Memory Bank Controllers (MBC) are not yet implemented.
 
-For detailed implementation status, see `docs/development.md`.
+For detailed implementation status and known issues, see `docs/development.md`.

@@ -32,9 +32,7 @@ Comprehensive development status, implementation details, and debugging informat
 #### Game Compatibility
 | Game | Boot | Graphics | Input | Status |
 |------|------|----------|-------|--------|
-| Tetris | Yes | Yes | Yes | Playable |
-| Dr. Mario | Not tested | - | - | - |
-| Super Mario Land | Not tested | - | - | - |
+| Tetris | Yes | Yes | Yes | Menus playable, crashes on stage transitions |
 
 ## Component Implementation Details
 
@@ -169,7 +167,7 @@ Bit 0:   P10 Input Right or A (0=Pressed)
 
 ## Resolved Bugs
 
-### LCDC/DMA Write Confusion (2026-01-11)
+### LCDC/DMA Write Confusion
 **Component:** Memory (I/O Registers)
 
 **Problem:**
@@ -182,8 +180,7 @@ Game ROM contains a loop that writes 0x2F to 10 consecutive I/O registers includ
 
 **Files Modified:** src/memory.py
 
-### VRAM/OAM Access When LCD OFF (2026-01-10)
-**Component:** Memory/PPU
+### VRAM/OAM Access When LCD OFF **Component:** Memory/PPU
 
 **Problem:**
 VRAM and OAM were blocked even when LCD was disabled. Games turn OFF LCD to safely write to VRAM.
@@ -193,8 +190,7 @@ Added LCDC bit 7 check before applying restrictions.
 
 **Files Modified:** src/memory.py
 
-### LY Counter Stops When LCD OFF (2026-01-10)
-**Component:** PPU
+### LY Counter Stops When LCD OFF **Component:** PPU
 
 **Problem:**
 LY register reset to 0 and stopped advancing when LCD turned off.
@@ -204,8 +200,7 @@ LY continues to increment 0-153 even when LCD is disabled.
 
 **Files Modified:** src/ppu.py
 
-### Joypad Input Not Detected (2026-01-10)
-**Component:** Joypad
+### Joypad Input Not Detected **Component:** Joypad
 
 **Problem:**
 Button presses not detected. P1 register always returned 0xCF regardless of button state.
@@ -219,8 +214,7 @@ Changed to use &= operator to clear bits for pressed buttons.
 
 **Files Modified:** src/joypad.py
 
-### Sprite Rendering Not Implemented (2026-01-09)
-**Component:** PPU
+### Sprite Rendering Not Implemented **Component:** PPU
 
 **Solution:**
 Implemented complete sprite rendering system with all features:
@@ -235,8 +229,7 @@ Implemented complete sprite rendering system with all features:
 
 **Files Modified:** src/ppu.py
 
-### Boot ROM Simulation Missing (2026-01-09)
-**Component:** Memory/CPU
+### Boot ROM Simulation Missing **Component:** Memory/CPU
 
 **Problem:**
 Emulator didn't simulate Game Boy boot sequence. VRAM contained garbage, hardware registers not initialized.
@@ -292,11 +285,3 @@ Most games work fine with instant DMA. Some games might have timing issues. Not 
 - Using wrong operators (|= vs &=)
 - Incorrect bit manipulation
 - Off-by-one errors
-
-## Lessons Learned
-
-1. Always check LCD enable (LCDC bit 7) before applying PPU restrictions
-2. Read-only registers must ignore writes
-3. Boot ROM simulation critical for proper initialization
-4. Bit manipulation requires careful operator selection
-5. Test with actual games, not just test ROMs
