@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: snekboy
-Version: 0.1.0
-Summary: A Game Boy emulator in Python
-Requires-Python: >=3.8
