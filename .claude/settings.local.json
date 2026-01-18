@@ -36,7 +36,11 @@
       "Bash(timeout 300 /c/msys64/ucrt64/bin/python.exe:*)",
       "Bash(PYTHONPATH=. timeout 240 /c/msys64/ucrt64/bin/python.exe:*)",
       "Bash(rm:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git status:*)",
+      "Bash(git restore:*)"
     ]
   }
 }
