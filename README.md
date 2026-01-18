@@ -2,9 +2,13 @@
 
 A Game Boy (DMG) emulator written in Python, implementing the complete Sharp LR35902 CPU instruction set and core hardware components.
 
+<img width="462" height="176" alt="Sb" src="https://github.com/user-attachments/assets/cd4fc784-ecff-4798-a9d1-94cecba4cec5" />
+
 ## Overview
 
 SnekBoy is a Game Boy emulator that aims to accurately emulate the original Game Boy hardware, including CPU, PPU (graphics), timer system, joypad input, and interrupt handling. The emulator passes Blargg's cpu_instrs and instr_timing test suites. While core systems are functional, there are known bugs preventing full game compatibility that are currently being investigated.
+
+<img width="306" height="276" alt="tt" src="https://github.com/user-attachments/assets/95abb3ab-3b99-4bba-a482-7d5468d314d6" />
 
 ## Features
 
