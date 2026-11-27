@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.0 — Speed, part 2
+
+- Dedicated handlers for the frequent instructions (loads, arithmetic,
+  jumps, calls, LDH, all CB ops), generated from templates.
+- A halted CPU skips ahead to the next PPU or timer event instead of
+  idling one cycle at a time.
+- The frame loop keeps fixed frame ends (emulated time ran ~0.02% slow).
+- Window title shows the version and palette; P switches between an
+  evenly spaced green palette (new default), the classic one and grey.
+
+No change in behaviour: every executed instruction of 12 games matches
+v0.8 cycle for cycle; test results unchanged. 7 of 11 tested games now
+reach full speed (e.g. Super Mario Land 36 -> 116 fps uncapped; the window
+is capped at 60); Tetris 29 -> 36 fps.
+
 ## 0.8.0 — CPU speed
 
 - Opcodes are decoded once at start-up into a dispatch table, replacing
