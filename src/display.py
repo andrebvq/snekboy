@@ -19,28 +19,34 @@ class Display:
     # Display scale factor
     SCALE = 3  # 3x scale = 480x432 window
 
-    # Game Boy color palette (grayscale)
-    COLORS = [
-        (155, 188, 15),   # 0: Lightest (white)
-        (139, 172, 15),   # 1: Light gray
-        (48, 98, 48),     # 2: Dark gray
-        (15, 56, 15),     # 3: Darkest (black)
-    ]
+    # Colour palettes for the 4 DMG shades (0 = lightest). The DMG screen is a
+    # reflective LCD with no backlight, so there is no single "true" colour.
+    # "green":   classic look with evenly spaced shades (default)
+    # "classic": the widespread #9BBC0F palette; shades 0 and 1 are almost equal
+    # "grey":    neutral greys, as many emulators and the Game Boy Pocket use
+    PALETTES = {
+        "green": [(155, 188, 15), (101, 143, 31), (48, 98, 48), (15, 56, 15)],
+        "classic": [(155, 188, 15), (139, 172, 15), (48, 98, 48), (15, 56, 15)],
+        "grey": [(255, 255, 255), (170, 170, 170), (85, 85, 85), (0, 0, 0)],
+    }
+    PALETTE_KEY = pygame.K_p            # cycles through PALETTES
 
-    def __init__(self, title=f"SnekBoy v{__version__}"):
+    def __init__(self, title=f"SnekBoy v{__version__}", palette="green"):
         """
         Initialize pygame display
 
         Args:
             title: Window title
+            palette: Name of the starting entry in PALETTES
         """
         pygame.init()
+        self.title = title
 
         self.width = self.GB_WIDTH * self.SCALE
         self.height = self.GB_HEIGHT * self.SCALE
 
         self.screen = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption(title)
+        self.set_palette(palette)
 
         # Create surface for Game Boy screen (will be scaled up)
         self.gb_screen = pygame.Surface((self.GB_WIDTH, self.GB_HEIGHT))
@@ -48,6 +54,16 @@ class Display:
         # Frame timing
         self.clock = pygame.time.Clock()
         self.target_fps = 60  # Game Boy runs at ~59.7 FPS
+
+    def set_palette(self, name):
+        """Switch to the named palette; the window title shows its name."""
+        self.palette_name = name
+        self.COLORS = self.PALETTES[name]
+        pygame.display.set_caption(f"{self.title} - {name}")
+
+    def next_palette(self):
+        names = list(self.PALETTES)
+        self.set_palette(names[(names.index(self.palette_name) + 1) % len(names)])
 
     def render(self, screen_buffer):
         """
@@ -88,6 +104,8 @@ class Display:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return False
+                if event.key == self.PALETTE_KEY:
+                    self.next_palette()
 
                 # Handle joypad input
                 if joypad:

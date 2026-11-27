@@ -62,6 +62,7 @@ python -m src.emulator
 - Right: L key
 
 **System:**
+- Switch colour palette (green / classic / grey): P key
 - Quit: ESC key
 
 ## Project Structure
