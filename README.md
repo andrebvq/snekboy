@@ -1,12 +1,12 @@
 # SnekBoy
 
-SnekBoy is an original Game Boy (DMG) emulator written in pure Python, with pygame for the display and input. It models the Sharp LR35902 CPU, the timer, the interrupts, the picture processing unit (PPU), OAM DMA, the serial port and the common cartridge mappers, timed to the individual memory access. It plays most of the commercial games tested, and every DMG-specific mooneye acceptance test passes. Audio is not emulated.
+SnekBoy is an original Game Boy (DMG) emulator written in pure Python, with pygame for the display and input. It models the Sharp LR35902 CPU, the timer, the interrupts, the picture processing unit (PPU), OAM DMA, the serial port and the common cartridge mappers, timed to the individual memory access. It runs the commercial games it has been tested with, and every DMG-specific mooneye acceptance test passes. Audio is not emulated.
 
 <img width="462" height="176" alt="SnekBoy" src="https://github.com/user-attachments/assets/cd4fc784-ecff-4798-a9d1-94cecba4cec5" />
 
-The project is a learning exercise in hardware emulation: it aims to be correct first and readable second, and then as fast as pure Python allows. Its full development history, including what was wrong at each release, how it was found and why each fix is correct, is written up in the [Developer's Logbook](docs/developer_logbook.html).
+The project is a learning exercise in hardware emulation: it aims to be correct first and readable second, and then as fast as pure Python allows. Its full development history, including what was wrong at each release, how it was diagnosed and why each fix is correct, is written up in the [Developer's Logbook](docs/developer_logbook.html).
 
-<img width="306" height="276" alt="Tetris running in SnekBoy" src="https://github.com/user-attachments/assets/95abb3ab-3b99-4bba-a482-7d5468d314d6" />
+<img width="306" height="276" alt="SnekBoy running a game" src="https://github.com/user-attachments/assets/95abb3ab-3b99-4bba-a482-7d5468d314d6" />
 
 ## Status at a glance
 
@@ -18,7 +18,7 @@ The project is a learning exercise in hardware emulation: it aims to be correct 
 | Cartridges | ROM only, MBC1, MBC2, MBC3 (with real-time clock), MBC5; battery saves |
 | Other hardware | Timer with all edge cases tested by mooneye; OAM DMA; serial port timing (no link partner); joypad |
 | Not implemented | Audio (APU), the DMG OAM corruption bug, MBC1 multicart, Game Boy Color |
-| Speed | 5 of 11 tested games reach full speed (60 fps) in gameplay on Python 3.10; the rest run at 51-55 fps |
+| Speed | About half of the commercial games tested reach full speed (60 fps) in gameplay on Python 3.10; the rest run at 51-55 fps |
 
 ## Quick start
 
@@ -90,20 +90,9 @@ The window loop asks the CPU to run 70,224 T-cycles, one frame, with `cpu.run_un
 
 Blargg's sound tests are excluded, since there is no APU. The mooneye ROMs are not included in this repository.
 
-### Games tested
+### Speed
 
-These were measured on Python 3.10 over frames 700-1200, after getting into the game, with the frame cap removed. Full speed is 60 fps; the window caps at 60.
-
-| Game | Mapper | Gameplay fps | | Game | Mapper | Gameplay fps |
-|---|---|---|---|---|---|---|
-| Final Fantasy Legend | MBC2 + battery | 118 | | Wario Land II | MBC5 + battery | 55 |
-| Dr. Mario | ROM only | 99 | | Alleyway | ROM only | 54 |
-| Super Mario Land | MBC1 | 83 | | Pokémon Gold | MBC3 + clock + battery | 54 |
-| Super Mario Land 2 | MBC1 + battery | 82 | | Pokémon Red | MBC3 + battery | 52 |
-| Zelda: Link's Awakening DX (Japan) | MBC5 + battery | 66 | | Kirby's Dream Land | MBC1 | 51 |
-| | | | | Tetris | ROM only | 51 |
-
-All 11 play correctly as far as they were tested by hand. Games that wait for the next frame with `HALT` run fastest. Games that busy-wait in a loop reading the LCD status cost the most per emulated frame. On v0.9, Python 3.11 ran SnekBoy about 1.9× faster than 3.10 (Tetris 36 → 72 fps over the intro); it has not yet been measured on the current version.
+Measured on Python 3.10 in gameplay, with the frame cap removed, on a set of 11 commercial games covering every supported mapper: 5 reach full speed (60 fps), and the rest run at 51-55 fps. Games that wait for the next frame with `HALT` run fastest. Games that busy-wait in a loop reading the LCD status cost the most per emulated frame. On v0.9, Python 3.11 ran SnekBoy about 1.9× faster than 3.10; it has not yet been measured on the current version.
 
 ## Testing
 
@@ -127,7 +116,7 @@ The unit tests cover each component. Several are differential: the optimised pat
 
 | Document | Contents |
 |---|---|
-| [Developer's Logbook](docs/developer_logbook.html) | Every release from 0.1 to 0.9.2: the state of the emulator, the problems found and how, each fix with the hardware behaviour behind it, and how it was verified. Open it in a browser. |
+| [Developer's Logbook](docs/developer_logbook.html) | Every release from 0.1 to 0.9.2: the state of the emulator, the problems and their diagnosis, each fix with the hardware behaviour behind it, and how it was verified. Open it in a browser. |
 | [docs/architecture.md](docs/architecture.md) | How the emulator is built: components, timing model, frame loop, optimisations |
 | [docs/gameboy_reference.md](docs/gameboy_reference.md) | Compact Game Boy hardware reference: memory map, registers, timings |
 | [docs/opcode_reference.md](docs/opcode_reference.md) | Instruction groups with cycles and flag effects |
@@ -137,7 +126,7 @@ The unit tests cover each component. Several are differential: the optimised pat
 
 ## Versioning
 
-**Current version: 0.9.2 (Frame loop).** Each frame now runs in one inline loop for the common case: the CPU is running, code is in ROM or RAM, and no DMA or interrupt is pending. Anything else goes through the general `step()` path. Behaviour is unchanged (every executed instruction of 12 games matches 0.9.1). Gameplay speed of the slower games rose 6-33%, for example Kirby 39 → 51 fps and Zelda DX 53 → 66 fps.
+**Current version: 0.9.2 (Frame loop).** Each frame now runs in one inline loop for the common case: the CPU is running, code is in ROM or RAM, and no DMA or interrupt is pending. Anything else goes through the general `step()` path. Behaviour is unchanged (every executed instruction of 12 games matches 0.9.1). Gameplay speed of the slower games rose 6-33%.
 
 Releases are numbered 0.x while features and accuracy are being built. From 0.9 onwards, performance and polish releases are numbered 0.9.1, 0.9.2 and so on until 1.0. Each release is a tagged merge of one pull request. [CHANGELOG.md](CHANGELOG.md) lists every release, and the [Developer's Logbook](docs/developer_logbook.html) explains each one in depth.
 
