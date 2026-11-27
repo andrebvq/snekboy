@@ -6,6 +6,7 @@ Renders the PPU screen buffer to a window
 
 import pygame
 import sys
+from itertools import chain
 
 class Display:
     """Display window for Game Boy emulator"""
@@ -54,16 +55,15 @@ class Display:
         Args:
             screen_buffer: 144x160 array of color values (0-3)
         """
-        # Convert screen buffer to pixels
-        for y in range(self.GB_HEIGHT):
-            for x in range(self.GB_WIDTH):
-                color_index = screen_buffer[y][x]
-                color = self.COLORS[color_index]
-                self.gb_screen.set_at((x, y), color)
+        # Hand pygame the whole frame at once: one byte per pixel (colour
+        # number 0-3) on an 8-bit surface whose palette holds the 4 colours.
+        pixels = bytes(chain.from_iterable(screen_buffer))
+        frame = pygame.image.frombuffer(pixels, (self.GB_WIDTH, self.GB_HEIGHT), "P")
+        frame.set_palette(self.COLORS)
 
         # Scale up to window size
         scaled_screen = pygame.transform.scale(
-            self.gb_screen,
+            frame,
             (self.width, self.height)
         )
 

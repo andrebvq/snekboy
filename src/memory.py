@@ -79,18 +79,24 @@ class Memory:
         self.boot_rom_enabled = True  # Boot ROM active until 0xFF50 write
         self.cartridge_data = None  # Will store full cartridge ROM
         self.cartridge = None  # Memory bank controller, set by load_rom
+        # Gameboy Doctor LY override, read once: checking the environment on
+        # every LY read was a measurable cost (games poll LY constantly).
+        self._doctor_ly_override = should_override_ly_register()
     
     def read_byte(self, address: int) -> int:
         """Read a single byte from memory"""
-        address = validate_word(address)  # Ensure 16-bit address
+        address &= 0xFFFF
         self._read_count += 1
 
-        # Boot ROM mapping (0x0000-0x00FF) - active until FF50 write
-        if self.boot_rom_enabled and address < 0x0100:
-            # Boot ROM not loaded - return cartridge data
-            # Real hardware would return boot ROM here
-            if self.cartridge_data and address < len(self.cartridge_data):
+        # Fast path for the most common reads: ROM (instruction fetches),
+        # work RAM, high RAM and IE have no special read rules.
+        if address < 0x8000:
+            # Boot ROM mapping (0x0000-0x00FF) - active until FF50 write.
+            # Boot ROM not loaded - return cartridge data.
+            if address < 0x0100 and self.boot_rom_enabled and self.cartridge_data:
                 return self.cartridge_data[address]
+            return self._data[address]
+        if 0xC000 <= address < 0xE000 or address >= 0xFF80:
             return self._data[address]
 
         # Cartridge RAM (0xA000-0xBFFF) goes through the memory bank controller
@@ -130,7 +136,7 @@ class Memory:
             return self.joypad.read_p1()
 
         # Gameboy Doctor: Override LY register to 0x90 (VBlank) to avoid timing issues
-        if address == 0xFF44 and should_override_ly_register():
+        if address == 0xFF44 and self._doctor_ly_override:
             return get_overridden_ly_value()
 
         # Handle special memory regions
