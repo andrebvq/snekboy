@@ -295,12 +295,26 @@ class Memory:
 
         # LCDC register (0xFF40) - LCD Control
         if address == 0xFF40:
-            # DEBUG: Log LCDC writes to help diagnose issues
-            if self._cpu and hasattr(self._cpu, 'registers'):
-                # Only log if value has changed to reduce spam
-                if self._data[0xFF40] != value:
-                    pass  # Can enable debug logging here if needed
             self._data[address] = value
+            ppu = getattr(self._cpu, 'ppu', None)
+            if ppu:
+                ppu.lcdc_written()
+            return
+
+        # STAT (0xFF41): only bits 3-6 are writable; mode and LY=LYC flag are read-only
+        if address == 0xFF41:
+            self._data[address] = (self._data[address] & 0x07) | (value & 0x78)
+            ppu = getattr(self._cpu, 'ppu', None)
+            if ppu:
+                ppu.stat_written()
+            return
+
+        # LYC (0xFF45): the LY=LYC comparison is re-checked straight away
+        if address == 0xFF45:
+            self._data[address] = value
+            ppu = getattr(self._cpu, 'ppu', None)
+            if ppu:
+                ppu.lyc_written()
             return
 
         # DMA register (0xFF46) - OAM DMA transfer
@@ -494,6 +508,10 @@ class Memory:
 
         # Set FF50 to indicate boot complete
         self._data[0xFF50] = 0x01
+
+        ppu = getattr(self._cpu, 'ppu', None)
+        if ppu:
+            ppu.post_boot_state()
 
         print("Boot simulation complete - VRAM cleared, all registers initialized")
 
