@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.0 — CPU speed
+
+- Opcodes are decoded once at start-up into a dispatch table, replacing
+  two long comparison chains per instruction.
+- The timer counts TIMA ticks arithmetically between events instead of
+  looping over every M-cycle.
+- Flags are a plain byte; plain memory reads and register access skip
+  helper layers.
+- Removed the unused second decoder and executor.
+
+No change in behaviour: CPU state and screens of 12 games match v0.7
+frame for frame, test results unchanged. Tetris 8.8 -> 28 fps, Super
+Mario Land 15 -> 36 fps (full speed is 60).
+
 ## 0.7.0 — Timing
 
 - Each CPU memory access happens on its own cycle; the timer, PPU and

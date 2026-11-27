@@ -275,11 +275,11 @@ MIT License - See LICENSE file for details.
 
 ## Development Status
 
-Current version: 0.7.0 (Pre-Alpha). See `CHANGELOG.md`.
+Current version: 0.8.0 (Pre-Alpha). See `CHANGELOG.md`.
 
 - Passes: Blargg cpu_instrs, instr_timing, mem_timing, halt_bug; dmg-acid2; all mooneye acceptance tests for DMG-ABC.
 - Cartridges: ROM only, MBC1, MBC2, MBC3 (with clock), MBC5. Battery saves go to `<rom>.sav`.
 - Not yet implemented: audio (APU).
-- Known gaps: runs at about 15-25% of full speed; no OAM corruption bug; no MBC1 multicart.
+- Known gaps: runs at about 45-60% of full speed; no OAM corruption bug; no MBC1 multicart.
 
 For detailed implementation status and known issues, see `docs/development.md`.
