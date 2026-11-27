@@ -78,6 +78,11 @@ class CPU(InstructionImplementations):
         # Re-initialize CPU to post-boot state
         self._initialize_state()
 
+        # DIV is the top byte of the internal 16-bit counter, so seed the
+        # counter itself (DMG-ABC value after the boot ROM; DIV reads 0xAB).
+        self._system_counter = 0xABCC
+        self.memory._data[0xFF04] = self._system_counter >> 8
+
     def _initialize_state(self):
         """
         Initialize to post-boot ROM state (what registers contain after boot completes)

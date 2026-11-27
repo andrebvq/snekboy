@@ -439,6 +439,8 @@ class Memory:
         self._data[0xFF4B] = 0x00  # WX
 
         # Initialize I/O Registers
+        self.joypad.write_p1(0x00)  # P1 = 0xCF: both button groups selected, nothing pressed
+        self._data[0xFF00] = 0x00
         self._data[0xFF01] = 0x00  # SB (Serial data)
         self._data[0xFF02] = 0x7E  # SC (Serial control)
         self._data[0xFF04] = 0xAB  # DIV (Divider, varies but use common value)

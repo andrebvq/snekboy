@@ -66,3 +66,13 @@ def test_ff50_unmaps_boot_rom_on_bit0():
     assert not mem.boot_rom_enabled
     assert mem.read_byte(0x0010) == 0xAB
     assert mem.read_byte(0xFF50) == 0xFF
+
+
+def test_post_boot_p1_and_div():
+    cpu = _cpu_with_rom()
+    mem = cpu.memory
+    assert mem.read_byte(0xFF00) == 0xCF
+    assert mem.read_byte(0xFF04) == 0xAB
+    for _ in range(4):
+        cpu.step()                            # 4 NOPs = 16 T-cycles
+    assert mem.read_byte(0xFF04) == 0xAB      # DIV keeps counting from 0xAB, not 0x00
