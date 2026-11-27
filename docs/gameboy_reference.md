@@ -4,28 +4,42 @@ Quick reference for Game Boy hardware specifications and emulation implementatio
 
 ## Memory Map
 ```
-0x0000-0x3FFF  ROM Bank 0 (fixed)
-0x4000-0x7FFF  ROM Bank 1-N (switchable)
-0x8000-0x9FFF  VRAM
-0xA000-0xBFFF  External RAM
+0x0000-0x3FFF  ROM bank 0 (writes go to the mapper)
+0x4000-0x7FFF  ROM bank 1-N (switchable)
+0x8000-0x9FFF  VRAM (CPU locked out in mode 3)
+0xA000-0xBFFF  Cartridge RAM / MBC3 clock
 0xC000-0xDFFF  Work RAM
-0xFE00-0xFE9F  OAM (Sprites)
-0xFF00-0xFF7F  I/O Registers
-0xFF80-0xFFFE  High RAM
-0xFFFF         IE Register
+0xE000-0xFDFF  Echo of 0xC000-0xDDFF
+0xFE00-0xFE9F  OAM, sprite attributes (locked in modes 2-3 and during DMA)
+0xFEA0-0xFEFF  Unusable
+0xFF00-0xFF7F  I/O registers (unused bits read 1)
+0xFF80-0xFFFE  High RAM (usable during OAM DMA)
+0xFFFF         IE register
 ```
 
 ## Key I/O Registers
 ```
-0xFF00  P1     Joypad
-0xFF04  DIV    Divider (16384 Hz)
+0xFF00  P1     Joypad (group select + inverted button bits)
+0xFF01  SB     Serial data
+0xFF02  SC     Serial control (bit 7 start, bit 0 internal clock)
+0xFF04  DIV    Divider: upper byte of the 16-bit system counter
 0xFF05  TIMA   Timer counter
-0xFF06  TMA    Timer modulo
-0xFF07  TAC    Timer control
+0xFF06  TMA    Timer modulo (reload value)
+0xFF07  TAC    Timer control (bit 2 enable, bits 0-1 rate)
 0xFF0F  IF     Interrupt flags
 0xFF40  LCDC   LCD control
-0xFF41  STAT   LCD status
-0xFF44  LY     LCD scanline
+0xFF41  STAT   LCD status: interrupt sources, LY=LYC flag, mode
+0xFF42  SCY    Background scroll Y
+0xFF43  SCX    Background scroll X
+0xFF44  LY     Current line (read-only)
+0xFF45  LYC    LY compare
+0xFF46  DMA    OAM DMA source page
+0xFF47  BGP    Background palette
+0xFF48  OBP0   Sprite palette 0
+0xFF49  OBP1   Sprite palette 1
+0xFF4A  WY     Window Y
+0xFF4B  WX     Window X + 7
+0xFF50  BOOT   Boot ROM disable
 0xFFFF  IE     Interrupt enable
 ```
 
@@ -50,8 +64,8 @@ Components:
 
 ### Critical Behaviors
 - Writing DIV resets internal counter
-- TIMA overflow has 4-cycle delay
-- TAC writes can trigger edge detection
+- TIMA ticks on a falling edge of one system-counter bit, so writes to DIV or TAC can tick it
+- TIMA overflow: TIMA reads 0 for 4 cycles, then reloads from TMA and requests the interrupt
 
 ## Interrupt System
 Priority (high to low):
@@ -68,7 +82,8 @@ Priority (high to low):
 
 ## PPU (Graphics)
 - Screen: 160x144 pixels, 4 colors
-- Modes: OAM Search (80T) → Transfer (168-291T) → HBlank → VBlank
+- Modes: OAM search (80 dots) → pixel transfer (172-289 dots, longer with scroll, window and sprites) → HBlank → VBlank (lines 144-153)
+- STAT interrupt fires on the rising edge of the ORed sources, not once per source
 - One scanline: 456 T-cycles
 - Full frame: 154 scanlines (~59.7 Hz)
 
@@ -90,6 +105,7 @@ P1 Register (0xFF00):
 - [Pan Docs](https://gbdev.io/pandocs/) - Complete technical reference
 - [GBEDG](https://github.com/Hacktix/GBEDG) - Timing edge cases
 - [Opcode Table](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
+- [mooneye-test-suite](https://github.com/Gekkio/mooneye-test-suite)
 - [Blargg Test ROMs](https://gbdev.gg8.se/files/roms/blargg-gb-tests/)
 - [r/EmuDev](https://www.reddit.com/r/EmuDev/) - Community support
 

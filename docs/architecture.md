@@ -1,287 +1,132 @@
-# Development Documentation
-
-Comprehensive development status, implementation details, and debugging information for the SnekBoy Game Boy emulator.
-
-## Implementation Status
-
-### Completed Components
-
-| Component | Completeness | Status |
-|-----------|--------------|--------|
-| CPU Core | 100% | All opcodes implemented |
-| Memory Management | 100% | 64KB address space, I/O registers |
-| PPU (Graphics) | 95% | Background, window, sprites working |
-| Joypad Input | 100% | All 8 buttons functional |
-| Interrupts | 100% | VBlank, STAT, Timer, Serial, Joypad |
-| Timer | 100% | DIV, TIMA, TMA, TAC with edge cases |
-| Boot ROM | 100% | Full simulation of DMG boot sequence |
-| Serial Link | 20% | Output only, no link cable |
-
-### Not Implemented
-- Audio (APU) - 0%
-- Memory Bank Controller - 0%
-
-### Test Results
-
-#### Blargg Test ROMs
-- cpu_instrs: 11/11 PASS
-- instr_timing: 11/11 PASS
-- mem_timing: Not tested
-- Individual instruction tests: All passing
-
-#### Game Compatibility
-| Game | Boot | Graphics | Input | Status |
-|------|------|----------|-------|--------|
-| Tetris | Yes | Yes | Yes | Menus playable, crashes on stage transitions |
-
-## Component Implementation Details
-
-### Timer System
-
-Implements all four timer registers with sophisticated features:
-
-**DIV Register (0xFF04)**
-- Increments every 256 T-cycles (64 M-cycles)
-- Writing any value resets to 0
-- Correctly calculated from system counter
-
-**TIMA/TMA/TAC Registers**
-- All 4 timer frequencies: 4096 Hz, 262144 Hz, 65536 Hz, 16384 Hz
-- TIMA increments at exact intervals
-- Timer enable/disable works
-- TMA reload on overflow
-- Timer interrupt triggered correctly
-
-**Advanced Features**
-- Falling-edge detection for TIMA increments
-- TAC write obscure behavior (edge detection on writes)
-- TIMA overflow delay (1 M-cycle before TMA reload)
-- Writes to TIMA during overflow cancel reload
-
-**Implementation**
-Uses a 16-bit system counter that increments by 4 every M-cycle:
-- DIV = system_counter / 256
-- TIMA increments on falling edge of selected bit
-  - Bit 9 for freq 0 (4096 Hz)
-  - Bit 3 for freq 1 (262144 Hz)
-  - Bit 5 for freq 2 (65536 Hz)
-  - Bit 7 for freq 3 (16384 Hz)
-
-### PPU Implementation
-
-**Completed Features**
-
-LCD Registers:
-- LCDC (0xFF40): LCD control register
-- STAT (0xFF41): Status register with mode flags
-- SCX/SCY (0xFF42-43): Background scrolling
-- LY (0xFF44): Current scanline counter
-- LYC (0xFF45): LY compare for coincidence interrupt
-- BGP (0xFF47): Background palette
-
-PPU Modes & Timing:
-- Mode 0: HBlank (204 T-cycles)
-- Mode 1: VBlank (4560 T-cycles, 10 scanlines)
-- Mode 2: OAM Search (80 T-cycles)
-- Mode 3: Pixel Transfer (172 T-cycles)
-- Accurate scanline timing (456 T-cycles per line)
-- Frame timing (70224 T-cycles at 60 FPS)
-
-Background Rendering:
-- Tile-based rendering (8x8 pixel tiles)
-- 256x256 pixel background (32x32 tiles)
-- Scrolling support (SCX/SCY registers)
-- Tile map reading (0x9800-0x9BFF or 0x9C00-0x9FFF)
-- Tile data reading (0x8000-0x8FFF or 0x8800-0x97FF)
-- Signed/unsigned tile addressing modes
-- Palette support (4 colors, 2-bit per pixel)
-
-Sprite Layer:
-- 40 sprites in OAM
-- 8x8 and 8x16 sprite modes
-- X/Y flipping
-- Priority system (above/behind background)
-- Color 0 transparency
-- Dual palettes (OBP0, OBP1)
-- 10 sprites per scanline limit
+# Architecture
 
-Interrupts:
-- VBlank interrupt (bit 0 of IF)
-- STAT interrupts (HBlank, VBlank, LYC coincidence)
-- Proper interrupt timing
+How SnekBoy is built, component by component. For the history behind each design choice, see the [Developer's Logbook](developer_logbook.html).
 
-**Tile Format**
+## Overview
 
-Each tile is 8x8 pixels, stored as 16 bytes:
-- 2 bytes per row (8 rows total)
-- Each pixel uses 2 bits (one from each byte)
-- Bit 7 = leftmost pixel, Bit 0 = rightmost
+| Component | File | Role |
+|---|---|---|
+| Emulator | `src/emulator.py` | Loads the ROM and save, runs one frame per loop iteration, renders, paces to 60 fps, writes saves on quit |
+| CPU | `src/cpu.py` | Fetch, decode and execute; interrupts; HALT/STOP; the timer; per-access timing; the frame loop |
+| Decoder and handlers | `src/cpu_decoder.py`, `src/instructions_impl.py`, `src/fast_ops.py` | Decoding (used once, to build tables) and instruction semantics |
+| Memory | `src/memory.py` | Address decoding, I/O registers, OAM DMA, serial port, PPU access locks, boot state |
+| Cartridge | `src/cartridge.py` | Header parsing and the MBC1, MBC2, MBC3 (with clock) and MBC5 mappers |
+| PPU | `src/ppu.py` | LCD modes and timing, the STAT interrupt line, line rendering |
+| Joypad | `src/joypad.py` | The P1 register and the joypad interrupt |
+| Display | `src/display.py` | pygame window, keyboard, palettes |
 
-**Timing Accuracy**
-- Scanline advances every 456 T-cycles
-- VBlank occurs at line 144
-- Mode transitions are accurate
-- One frame = 70224 T-cycles
+All emulated state lives in one 64 KB `bytearray` (`Memory._data`) plus the component objects. Regions without side effects (ROM, work RAM, high RAM) are read straight from that array, and everything else goes through `Memory.read_byte` / `write_byte`.
 
-### Joypad Implementation
+## Time
 
-**Keyboard Mapping**
+Time is counted in T-cycles: 4.194304 MHz, 4 per M-cycle and 70,224 per frame. `cpu.total_cycles` is the master clock.
 
-Buttons:
-- A: A key
-- B: S key
-- Start: Z key
-- Select: X key
+### Per-access timing
 
-D-Pad:
-- Up: I key
-- Down: K key
-- Left: J key
-- Right: L key
+On hardware, each memory access of an instruction happens on its own M-cycle, and the timer, PPU and DMA move on between them. SnekBoy models this with two counters per instruction:
 
-System:
-- Quit: ESC key
+- `_acc`: the T-cycles of the current instruction started so far. Each fetch, read, write and internal delay adds 4.
+- `_synced`: how far the timer, PPU and DMA have been advanced within the instruction.
 
-**P1 Register (0xFF00)**
+Before an access that could observe them (I/O at 0xFF00-0xFF7F, VRAM, OAM, or anything while OAM DMA runs), `_catch_up()` advances the other components by `_acc - _synced`. The rest is advanced when the instruction ends. A read of DIV, LY or STAT therefore sees the value of the exact cycle on which it happens.
 
-Bit Layout:
-```
-Bit 7-6: Not used (always 1)
-Bit 5:   P15 Select Button Keys (0=Select)
-Bit 4:   P14 Select Direction Keys (0=Select)
-Bit 3:   P13 Input Down or Start (0=Pressed)
-Bit 2:   P12 Input Up or Select (0=Pressed)
-Bit 1:   P11 Input Left or B (0=Pressed)
-Bit 0:   P10 Input Right or A (0=Pressed)
-```
+### Lazy synchronisation (frame loop only)
 
-**Reading Buttons**
-1. Game writes to P1 to select button group
-2. Game reads P1 to get button states (bits 0-3)
-3. 0 = pressed, 1 = not pressed (inverted logic)
+Inside `run_until_cycle()`, advancing the timer and PPU after every instruction is unnecessary when nothing can observe them. The CPU instead owes the cycles (`_lag`) until one of these happens:
 
-**Interrupts**
-- Joypad interrupt (bit 4 of IF register) triggered when any button is pressed
-- Game can enable joypad interrupt via IE register (bit 4)
-- Used to wake from HALT or handle input immediately
+- an access that catches up (see above). It pays the owed cycles first, because they are folded into `_synced` at the start of each instruction;
+- the owed cycles would reach `_budget`: the distance to the next point where the PPU or timer could raise an interrupt (`PPU.dots_to_next_event()`, TIMA overflow). Landing exactly on such a point syncs, so the interrupt check sees it;
+- a halted, stopped or locked stretch, STOP, an illegal opcode, or the end of the run.
 
-## Resolved Bugs
+A write to 0xFF00-0xFF7F resets the budget, because TAC, LCDC, LYC, STAT and DIV can move the next event. During OAM DMA, a serial transfer, or a TIMA overflow or reload, the budget is 0, which means a sync after every instruction.
 
-### LCDC/DMA Write Confusion
-**Component:** Memory (I/O Registers)
+### HALT skip-ahead
 
-**Problem:**
-Game ROM contains a loop that writes 0x2F to 10 consecutive I/O registers including LY (read-only) and DMA.
+A halted CPU advances straight to the earliest of: the caller's deadline, the next PPU event, or the TIMA overflow edge (`CPU._halt_skip`). It uses single M-cycles while DMA, serial or a TIMA reload is active. The timer and PPU change state only at fixed points and read nothing a halted CPU can change, so advancing them in one batch gives the same result as many small steps.
 
-**Solution:**
-1. Made LY (0xFF44) read-only - writes now ignored
-2. Added unused I/O register protection
-3. Verified LCDC and DMA handlers properly separated
+## CPU
 
-**Files Modified:** src/memory.py
+### Dispatch
 
-### VRAM/OAM Access When LCD OFF **Component:** Memory/PPU
+At start-up, `_build_dispatch()` runs every opcode once through the decoder with probe fetch functions. These record whether an operand byte or word is fetched and where it lands (the target or immediate slot). The result is a 256-entry table of `(handler, target, immediate, operand kind, slot, cycles)` and a 256-entry CB table. Fetch order and cycle counts come from the original decoder by construction.
 
-**Problem:**
-VRAM and OAM were blocked even when LCD was disabled. Games turn OFF LCD to safely write to VRAM.
+`src/fast_ops.py` then replaces 439 entries with dedicated handlers generated from templates: LD r,r'/r,n, the 8-bit ALU on registers and immediates, INC/DEC r, JR/JP/CALL/RET with and without conditions, LDH, and all CB operations. Each handler has its register or condition written into its code and computes the flag byte in one expression. A differential test runs every dedicated handler against the generic one on random states.
 
-**Solution:**
-Added LCDC bit 7 check before applying restrictions.
+### Frame loop
 
-**Files Modified:** src/memory.py
+`run_until_cycle(target)` runs `_frame_loop`, which hoists the tables, the memory array and the registers into locals and executes the common case inline:
 
-### LY Counter Stops When LCD OFF **Component:** PPU
+1. The interrupt check (IE & IF, only when IME is set).
+2. The opcode, read straight from ROM, WRAM or HRAM.
+3. Operand bytes, read straight when they are in those regions too, with the same `_acc` positions as the bus.
+4. The handler call, the EI countdown and the lazy-sync accounting.
 
-**Problem:**
-LY register reset to 0 and stopped advancing when LCD turned off.
+Anything else uses `step()` for that one instruction: halted, stopped, locked, HALT bug pending, OAM DMA running, PC elsewhere, an interrupt to dispatch, or an illegal opcode. `_on_instruction` is an optional hook called before each instruction, for tracing tools. With the Gameboy Doctor logger active, the loop uses `step()` throughout.
 
-**Solution:**
-LY continues to increment 0-153 even when LCD is disabled.
+### Interrupts, HALT, STOP
 
-**Files Modified:** src/ppu.py
+- EI takes effect after the next instruction. DI cancels a pending EI.
+- Dispatch takes 5 M-cycles. The interrupt is chosen after the high byte of PC is pushed, so a push that overwrites IE can cancel it (PC becomes 0x0000).
+- HALT with IME clear and an interrupt pending triggers the HALT bug: the next byte is read twice. `EI; HALT` with an interrupt pending returns to the HALT.
+- STOP resets DIV and freezes the CPU and timer until a selected joypad line goes low.
+- The 11 undefined opcodes lock the CPU for good while the timer and PPU keep running.
 
-### Joypad Input Not Detected **Component:** Joypad
+### Timer
 
-**Problem:**
-Button presses not detected. P1 register always returned 0xCF regardless of button state.
+The timer is driven by a 16-bit system counter, of which DIV is the upper byte. TIMA counts falling edges of counter bit 9, 3, 5 or 7 (TAC 0-3) ANDed with the enable bit. That makes writes to DIV or TAC able to tick TIMA. On overflow, TIMA reads 0 for one M-cycle, then reloads from TMA and requests the interrupt. During that reload cycle, TIMA writes are ignored and TMA writes go through to TIMA.
 
-**Root Cause:**
-1. Initial value was 0xC0 instead of 0xCF
-2. Used |= operator to mark pressed buttons (can only SET bits, not clear them)
+Between events the edges are counted arithmetically, with `(new >> s) - (old >> s)` for s = 10, 4, 6 or 8. The exact per-M-cycle path is used around overflows, reloads and serial transfers. A unit test compares the two paths on random states.
 
-**Solution:**
-Changed to use &= operator to clear bits for pressed buttons.
+## Memory
 
-**Files Modified:** src/joypad.py
+| Range | Behaviour |
+|---|---|
+| 0x0000-0x7FFF | ROM. Writes go to the mapper; ROM-only carts ignore them |
+| 0x8000-0x9FFF | VRAM, locked to the CPU during mode 3 |
+| 0xA000-0xBFFF | Cartridge RAM or MBC3 clock registers, when enabled |
+| 0xC000-0xDFFF | Work RAM |
+| 0xE000-0xFDFF | Echo of 0xC000-0xDDFF (reads and writes) |
+| 0xFE00-0xFE9F | OAM, locked during modes 2 and 3 and during DMA |
+| 0xFEA0-0xFEFF | Unusable: reads 0x00 (0xFF while OAM is locked), writes ignored |
+| 0xFF00-0xFF7F | I/O. Unused bits read 1; unmapped registers read 0xFF |
+| 0xFF80-0xFFFE | High RAM, the only RAM the CPU can use during OAM DMA |
+| 0xFFFF | IE |
 
-### Sprite Rendering Not Implemented **Component:** PPU
+- **OAM DMA:** one setup M-cycle, then 160 M-cycles copying one byte each. OAM reads 0xFF while it runs, a new write to 0xFF46 restarts it, and sources 0xE0-0xFF read work RAM.
+- **Serial:** with the internal clock, a transfer shifts one bit per falling edge of system-counter bit 8 (8192 Hz), then raises the serial interrupt. With no link partner, ones shift in.
+- **Mappers:** a bank switch copies the selected 16 KB ROM bank into the array, so ROM reads stay a plain index. The MBC3 clock reads host time (injectable for tests). Battery RAM is saved as `<rom>.sav`, the clock as `<rom>.rtc`.
 
-**Solution:**
-Implemented complete sprite rendering system with all features:
-- OAM reading from 0xFE00-0xFE9F (40 sprites, 4 bytes each)
-- 8x8 and 8x16 sprite modes
-- Sprite priority (above/behind BG)
-- Color 0 transparency
-- X and Y flipping
-- Dual sprite palettes OBP0/OBP1
-- 10 sprites per scanline hardware limit
-- Proper sprite ordering
+## PPU
 
-**Files Modified:** src/ppu.py
-
-### Boot ROM Simulation Missing **Component:** Memory/CPU
-
-**Problem:**
-Emulator didn't simulate Game Boy boot sequence. VRAM contained garbage, hardware registers not initialized.
-
-**Solution:**
-Implemented complete boot ROM simulation:
-
-Memory:
-- Clears VRAM to 0x00
-- Initializes all hardware registers
-- Clears OAM to 0x00
-- Disables boot ROM, maps cartridge to 0x0000-0x00FF
-
-CPU:
-- A=0x01, F=0xB0 (Z=1, N=0, H=1, C=1)
-- BC=0x0013, DE=0x00D8, HL=0x014D
-- SP=0xFFFE, PC=0x0100
-
-**Files Modified:** src/memory.py, src/cpu.py
-
-## Known Issues
-
-### DMA Implementation Simplified
-**Severity:** Low
-**Component:** Memory
-
-**Current Implementation:**
-- Instant copy of 160 bytes from source to OAM
-- Advances CPU cycle count by 640
-- Does NOT properly stall CPU during DMA
-
-**Real Hardware:**
-- CPU can only access HRAM (0xFF80-0xFFFE) during DMA
-- All other memory access returns 0xFF
-- DMA takes 160 M-cycles with CPU stalled
-
-**Impact:**
-Most games work fine with instant DMA. Some games might have timing issues. Not yet observed to cause problems.
-
-## Common Bug Patterns Observed
-
-**Register Access Bugs:**
-- Read-only registers accepting writes (LY)
-- Missing register implementations
-- Incorrect initial values
-
-**Memory Access Bugs:**
-- Not checking LCD enable before restricting access
-- Incorrect PPU mode checks
-- Missing special case handling
-
-**Logic Bugs:**
-- Using wrong operators (|= vs &=)
-- Incorrect bit manipulation
-- Off-by-one errors
+A line is 456 dots: OAM search (80), pixel transfer (172 plus penalties), HBlank, and lines 144-153 as VBlank. The pixel-transfer length adds fine X scroll (SCX & 7), 6 dots when the window starts, and the sprite stalls, so HBlank and the STAT mode change happen on the right dot.
+
+- **Rendering is line-based:** the whole line is drawn when pixel transfer starts, from the register values at that moment. Mid-line register changes are not shown (no game tested relies on them). Each 8-pixel tile row is decoded with one table lookup.
+- **Window:** it has its own line counter, which advances only on lines where the window was drawn. It is hidden when LCDC bit 0 is off and shifts left for WX < 7.
+- **Sprites:** up to 10 per line, chosen in OAM order. Where sprites overlap, lower X and then lower OAM index wins. The behind-background test uses the background colour number, not the shade.
+- **STAT:** the four sources are ORed into one line, and the interrupt fires on its rising edge only. LY shows the next line 4 dots early, and line 153 reads LY 0 after its first dots.
+- **LCD off** stops the PPU (LY 0, mode 0, a blank screen). LCD on restarts at line 0, without an OAM search on the first line.
+
+## Verification method
+
+Every release since 0.4 was checked against the previous one with harnesses kept outside the repository:
+
+| Check | Compares |
+|---|---|
+| State fingerprints | CPU registers, cycle count and screen hash of 12 games every 30 frames |
+| Screens with input | 20 screenshots per game over 1200 frames with scripted button presses |
+| Instruction trace | A rolling SHA-1 over every executed instruction's cycle count and registers (from 0.9) |
+| Test ROMs | Blargg and mooneye results against the previous release |
+| dmg-acid2 | Pixel difference against the reference image |
+
+Host inputs are pinned: buttons are scripted, and the MBC3 clock is frozen. Optimisations had to be identical on all of these. Behaviour changes were expected to move only the targeted tests.
+
+## Known limitations
+
+| Limitation | Effect |
+|---|---|
+| No APU | No sound; sound registers only store values, with unused bits reading 1 |
+| No OAM corruption bug | 6 of Blargg's `oam_bug` ROMs fail; games are not known to depend on it |
+| Line-based rendering | Mid-line raster effects are not shown |
+| No MBC1 multicart | Compilation cartridges with the multicart wiring do not run |
+| DMG only | No Game Boy Color mode; dual-mode games run in DMG mode |
+| Speed | 6 of the 11 tested games run below 60 fps in gameplay on Python 3.10 |
