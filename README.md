@@ -1,4 +1,4 @@
-# SnekBoy v0.1
+# SnekBoy
 
 A Game Boy (DMG) emulator written in Python, implementing the complete Sharp LR35902 CPU instruction set and core hardware components.
 
@@ -62,6 +62,7 @@ python -m src.emulator
 - Right: L key
 
 **System:**
+- Switch colour palette (green / classic / grey): P key
 - Quit: ESC key
 
 ## Project Structure
@@ -275,11 +276,12 @@ MIT License - See LICENSE file for details.
 
 ## Development Status
 
-Current version: 0.8.0 (Pre-Alpha). See `CHANGELOG.md`.
+Current version: 0.9.0 (Pre-Alpha). See `CHANGELOG.md`.
 
 - Passes: Blargg cpu_instrs, instr_timing, mem_timing, halt_bug; dmg-acid2; all mooneye acceptance tests for DMG-ABC.
 - Cartridges: ROM only, MBC1, MBC2, MBC3 (with clock), MBC5. Battery saves go to `<rom>.sav`.
 - Not yet implemented: audio (APU).
-- Known gaps: runs at about 45-60% of full speed; no OAM corruption bug; no MBC1 multicart.
+- Speed: 7 of 11 tested games reach full speed (60 fps); the others run at 34-42 fps (Tetris, Kirby, Pokémon Gold, Wario Land II, Zelda DX).
+- Known gaps: no OAM corruption bug; no MBC1 multicart.
 
 For detailed implementation status and known issues, see `docs/development.md`.

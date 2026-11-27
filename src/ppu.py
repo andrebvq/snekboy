@@ -265,6 +265,32 @@ class PPU:
                     return
                 self._next_line()
 
+    def dots_to_next_event(self):
+        """T-cycles until step() next changes the mode, LY or the STAT/VBlank
+        interrupt lines (lock-only points included, to stay conservative).
+        Between events, advancing in one call or in many gives the same
+        result. None while the LCD is off (no events); 0 if an LCD on/off
+        switch is still to be processed."""
+        lcd = self.memory._data[0xFF40] & 0x80
+        if not lcd:
+            return None if not self._lcd_on else 0
+        if not self._lcd_on:
+            return 0
+        dot = self.cycle_counter
+        phase = self._phase
+        if phase == self.MODE_OAM_SEARCH:
+            target = 76 if dot < 76 else 80
+        elif phase == self.MODE_PIXEL_TRANSFER:
+            target = self._mode3_end
+        elif (phase == self.MODE_VBLANK and self.ly == 153 and dot < 4
+              and self.memory._data[0xFF44] != 0):
+            target = 4
+        elif dot < 452:
+            target = 452
+        else:
+            target = 456
+        return target - dot
+
     def _unlock(self):
         self.oam_locked = self.oam_write_locked = False
         self.vram_locked = self.vram_write_locked = False
