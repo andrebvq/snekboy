@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>SnekBoy Developer's Logbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* VOICE work: a technical history for engineers who want to learn from it
+   IDEA a lab logbook kept beside a DMG on the bench: one entry per release, evidence first
+   PICTURE the release line: every release as a station, with tests passed and speed drawn under it
+   COLOUR white ground, ink navy, DMG screen green for progress, button magenta for problems, grey for hardware notes
+   TYPE IBM Plex Sans 700 display + Plex Sans text, Plex Mono for addresses and code
+   LAYOUT laptop: sticky index left, entry right; phone: index folds into a top menu, entry below */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#10121a);--ink:light-dark(#17193a,#e6e7f0);--mute:light-dark(#575b78,#a0a4ba);--rule:light-dark(#dfe0ea,#2a2d3d);--panel:light-dark(#f3f4f8,#171a26);--green:light-dark(#3f7d1c,#8fcf4a);--green2:light-dark(#9bbc0f,#5d8a1a);--mag:light-dark(#a3195b,#ff6fa8);--navy:light-dark(#2b2f7e,#8f96ff);--note:light-dark(#eef4e2,#1a2414)}
+:root[data-theme=light]{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html{scroll-padding-top:16px}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 "IBM Plex Sans",system-ui,sans-serif;margin:0;overflow-x:clip}
+a{color:var(--navy)}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.88em}
+pre{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:14px;line-height:1.5;background:var(--panel);border-radius:6px;padding:12px 14px;overflow-x:auto;margin:0 0 16px}
+.shell{display:grid;grid-template-columns:250px minmax(0,1fr);max-width:1320px;margin:0 auto}
+nav.idx{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:28px 18px 28px max(16px,env(safe-area-inset-left,0px));border-right:1px solid var(--rule)}
+nav.idx .brand{font-weight:700;font-size:18px;line-height:1.2;margin:0 0 4px}
+nav.idx .sub{color:var(--mute);font-size:13px;margin:0 0 18px}
+nav.idx ol{list-style:none;margin:0;padding:0}
+nav.idx li a{display:grid;grid-template-columns:3.6em minmax(0,1fr);gap:6px;text-decoration:none;color:var(--ink);padding:7px 8px;border-radius:5px;font-size:14px;line-height:1.3}
+nav.idx li a b{font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--mute)}
+nav.idx li a:hover{background:var(--panel)}
+nav.idx li a[aria-current=page]{background:var(--ink);color:var(--bg)}
+nav.idx li a[aria-current=page] b{color:var(--bg)}
+nav.idx .grp{font-size:13px;color:var(--mute);margin:16px 8px 4px}
+main{padding:clamp(24px,3.5vw,52px) max(5vw,16px,env(safe-area-inset-right,0px)) 64px clamp(20px,3.5vw,52px)}
+article{max-width:860px}
+article+article{margin-top:72px;padding-top:40px;border-top:2px solid var(--rule)}
+.js article+article{margin-top:0;padding-top:0;border-top:none}
+h1{font-size:clamp(32px,4.2vw,46px);line-height:1.08;letter-spacing:-.02em;margin:0 0 14px}
+h2{font-size:24px;line-height:1.2;letter-spacing:-.01em;margin:40px 0 12px}
+h3{font-size:18px;margin:26px 0 8px}
+p{margin:0 0 14px;max-width:70ch}
+ul,ol{padding-left:22px;margin:0 0 14px}
+li{margin-bottom:6px;max-width:68ch}
+.ver{font-family:"IBM Plex Mono",monospace;color:var(--mag);font-size:15px;margin:0 0 6px}
+.lede{font-size:18px;max-width:64ch}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(9em,1fr));gap:12px;margin:22px 0 8px}
+.fig-n{border-top:3px solid var(--ink);padding-top:8px}
+.fig-n b{display:block;font-size:clamp(24px,3vw,32px);line-height:1.1;white-space:nowrap}
+.fig-n span{font-size:14px;color:var(--mute)}
+.fig-n i{font-style:normal;color:var(--green);font-weight:600}
+.scroll{overflow-x:auto;margin:0 0 18px}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th{text-align:left;font-weight:600;color:var(--mute);border-bottom:2px solid var(--ink);padding:8px 12px 8px 0;white-space:nowrap}
+td{border-bottom:1px solid var(--rule);padding:8px 12px 8px 0;vertical-align:top}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fix{border-left:4px solid var(--mag);padding:2px 0 2px 16px;margin:0 0 22px}
+.fix h3{margin-top:0}
+.fix dl{display:grid;grid-template-columns:7.2em minmax(0,1fr);gap:4px 14px;margin:0}
+.fix dt{font-weight:600;color:var(--mute);font-size:14px;padding-top:2px}
+.fix dd{margin:0;max-width:66ch}
+.note{background:var(--note);border-radius:6px;padding:14px 18px;margin:0 0 22px}
+.note h4{margin:0 0 6px;font-size:15px;color:var(--green)}
+.note p:last-child,.note ul:last-child{margin-bottom:0}
+.take{border-top:2px solid var(--ink);padding-top:12px;margin-top:30px}
+.pager{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:44px;padding-top:16px;border-top:1px solid var(--rule)}
+.pager a{text-decoration:none;font-weight:600;padding:8px 0;min-height:40px}
+.line{margin:26px 0 8px;background:var(--panel);border-radius:8px;padding:20px clamp(12px,2vw,22px) 16px}
+.line-h{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 18px;align-items:baseline;margin-bottom:14px}
+.line-h b{font-size:16px}
+.line-h span{font-size:13px;color:var(--mute)}
+.rl{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));gap:4px;position:relative}
+.rl a{display:grid;grid-template-rows:auto auto 92px 92px;gap:6px;text-decoration:none;color:var(--ink);text-align:center;font-size:13px;padding:4px 2px;border-radius:5px}
+.rl a:hover{background:var(--bg)}
+.rl .dot{width:18px;height:18px;border-radius:50%;margin:0 auto;border:4px solid var(--ink);background:var(--bg);position:relative;z-index:1}
+.rl .lab{font-family:"IBM Plex Mono",monospace;font-size:13px;line-height:1.2}
+.rl .lab small{display:block;font-family:"IBM Plex Sans",sans-serif;color:var(--mute);font-size:12px;margin-top:2px}
+.rl .col{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;border-bottom:1px solid var(--rule)}
+.rl .col i{display:block;width:min(26px,70%);border-radius:3px 3px 0 0}
+.rl .col em{font-style:normal;font-variant-numeric:tabular-nums;font-size:12px}
+.rl::before{content:"";position:absolute;left:4%;right:4%;top:13px;height:5px;background:var(--ink);border-radius:3px}
+.rl-key{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;font-size:13px;color:var(--mute);margin-top:10px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:6px}
+.bytes{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 14px;align-items:center;margin:0 0 20px}
+.bytes .l{font-size:14px;color:var(--mute);white-space:nowrap}
+.cells{display:flex;flex-wrap:wrap;gap:4px}
+.cells span{font-family:"IBM Plex Mono",monospace;font-size:14px;padding:3px 7px;border:1px solid var(--rule);border-radius:4px}
+.cells .hit{background:var(--mag);color:#fff;border-color:var(--mag)}
+.cells .ok{border:2px solid var(--green)}
+.cyc{display:grid;grid-template-columns:7em repeat(3,minmax(0,1fr));gap:4px;font-size:14px;margin:0 0 20px}
+.cyc div{padding:7px 8px;border-radius:4px;background:var(--panel)}
+.cyc .h{background:none;color:var(--mute);font-weight:600;padding-left:0}
+.cyc .rd{background:var(--green2);color:#10220a;font-weight:600}
+.cyc .bad{background:var(--mag);color:#fff;font-weight:600}
+.pal{display:flex;gap:4px;margin:4px 0 14px}
+.pal span{flex:1;height:30px;border-radius:3px}
+.hide-nav{display:none}
+@media(max-width:860px){.shell{grid-template-columns:minmax(0,1fr)}nav.idx{position:static;height:auto;overflow:visible;border-right:none;border-bottom:1px solid var(--rule);padding:16px max(5vw,16px)}nav.idx ol{display:flex;flex-wrap:wrap;gap:4px}nav.idx li a{display:block;padding:6px 9px;border:1px solid var(--rule)}nav.idx li a span{display:none}nav.idx li a.t b{display:none}nav.idx li a.t span{display:inline}nav.idx .grp{flex-basis:100%;margin:8px 0 2px}main{padding-left:max(5vw,16px);padding-right:max(5vw,16px)}}
+@media(max-width:640px){.rl{grid-template-columns:minmax(0,1fr)}.rl::before{display:none}.rl a{grid-template-columns:4.2em minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto;align-items:center;text-align:left;border-bottom:1px solid var(--rule);border-radius:0}.rl .dot{display:none}.rl .col{flex-direction:row;justify-content:flex-start;border:none;height:auto}.rl .col i{height:12px!important;border-radius:0 3px 3px 0}.fix dl{grid-template-columns:minmax(0,1fr)}.fix dt{padding-top:6px}table{font-size:13px}th,td{padding:6px 8px 6px 0}.cyc{grid-template-columns:5em repeat(3,minmax(0,1fr));font-size:13px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="idx" aria-label="Releases">
+  <p class="brand">SnekBoy<br>Developer's Logbook</p>
+  <p class="sub">A Game Boy emulator in Python, release by release</p>
+  <ol>
+    <li><a class="t" href="#overview"><b>—</b><span>Overview</span></a></li>
+    <li class="grp">Accuracy</li>
+    <li><a href="#v0-1"><b>0.1</b><span>Baseline and audit</span></a></li>
+    <li><a href="#v0-2"><b>0.2</b><span>Memory map</span></a></li>
+    <li><a href="#v0-3"><b>0.3</b><span>Cartridge mappers</span></a></li>
+    <li><a href="#v0-4"><b>0.4</b><span>Speed, part 1</span></a></li>
+    <li><a href="#v0-5"><b>0.5</b><span>Interrupts and timer</span></a></li>
+    <li><a href="#v0-6"><b>0.6</b><span>Graphics</span></a></li>
+    <li><a href="#v0-7"><b>0.7</b><span>Timing</span></a></li>
+    <li class="grp">Performance</li>
+    <li><a href="#v0-8"><b>0.8</b><span>CPU speed</span></a></li>
+    <li><a href="#v0-9"><b>0.9</b><span>Handlers and HALT skip</span></a></li>
+    <li><a href="#v0-9-1"><b>0.9.1</b><span>Lazy sync</span></a></li>
+    <li><a href="#v0-9-2"><b>0.9.2</b><span>Frame loop</span></a></li>
+    <li class="grp">Reference</li>
+    <li><a class="t" href="#method"><b>—</b><span>Verification method</span></a></li>
+    <li><a class="t" href="#next"><b>—</b><span>Open problems</span></a></li>
+  </ol>
+</nav>
+<main>
+
+<!-- ============================================================ OVERVIEW -->
+<article id="overview">
+  <p class="ver">Overview</p>
+  <h1>From a crashing Tetris to every DMG acceptance test</h1>
+  <p class="lede">SnekBoy 0.1 ran its CPU tests but crashed Tetris, had no cartridge mappers and ran at about a tenth of full speed. Eleven releases later, it passes all 93 DMG-relevant mooneye tests and dmg-acid2, plays every game tested, and runs 5 of 11 at full speed in pure Python.</p>
+  <p>This logbook records each release: the state of the emulator at the time, what was wrong, how it was found, why the fix matches the hardware, and how the result was verified. It is written for readers who want to learn how the Game Boy works, and how an emulator is checked, from the problems this one actually had.</p>
+
+  <div class="line" aria-label="Release line">
+    <div class="line-h"><b>The release line</b><span>Select a release to open its entry</span></div>
+    <div class="rl" id="rl"></div>
+    <div class="rl-key">
+      <span><span class="sw" style="background:var(--green)"></span></span><span>mooneye tests passed, of 111 (all 93 DMG-relevant tests pass from 0.7)</span>
+      <span><span class="sw" style="background:var(--navy)"></span></span><span>Tetris, frames per second over the first 360 frames, uncapped (60 = full speed); blank where not measured</span>
+    </div>
+  </div>
+
+  <h2>Two phases</h2>
+  <p><b>0.2 to 0.7 made the emulator correct.</b> An audit of 0.1 produced the work list. Each release took one hardware area, fixed it against Pan Docs and the test ROMs, and confirmed that nothing else changed. <b>0.8 to 0.9.2 made it fast without changing behaviour.</b> Every optimisation had to reproduce the previous release instruction for instruction across twelve games.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Release</th><th>Theme</th><th class="n">Blargg /33</th><th class="n">mooneye /111</th><th class="n">Unit tests</th><th class="n">Tetris fps</th></tr></thead>
+    <tbody id="ovt"></tbody>
+  </table></div>
+  <p class="mono" style="font-size:13px;color:var(--mute)">Blargg: the 33 non-sound ROMs. Speed: Python 3.10, measured by a harness without the window. Releases 0.5 and 0.6 were not benchmarked; they did not target speed.</p>
+
+  <h2>How to read an entry</h2>
+  <ul>
+    <li><b>Starting point:</b> what worked and what didn't when the release began.</li>
+    <li><b>How it was found:</b> the test, trace or profile that exposed each problem.</li>
+    <li><b>Changes:</b> for each fix, what the hardware does, what SnekBoy did, and the change. Magenta bars mark these.</li>
+    <li><b>Game Boy notes:</b> background on the hardware, in green boxes.</li>
+    <li><b>Verification and takeaways:</b> the evidence that the release did what it claimed, and what it taught.</li>
+  </ul>
+</article>
+
+<!-- ============================================================ 0.1 -->
+<article id="v0-1">
+  <p class="ver">0.1 · commit f7cee75</p>
+  <h1>Baseline: the CPU tests pass, the games don't</h1>
+  <p class="lede">Version 0.1 implemented every instruction and passed Blargg's CPU tests, yet Tetris crashed when a game started. An audit was run to find out why, and what else was wrong, before any fix was made.</p>
+  <div class="figs">
+    <div class="fig-n"><b>15/33</b><span>Blargg ROMs</span></div>
+    <div class="fig-n"><b>24/111</b><span>mooneye ROMs</span></div>
+    <div class="fig-n"><b>12/13</b><span>unit tests</span></div>
+    <div class="fig-n"><b>~0.1×</b><span>of full speed</span></div>
+  </div>
+
+  <h2>Starting point</h2>
+  <p>The CPU decoded all 245 defined opcodes and 256 CB opcodes. The PPU drew background, window and sprites, and the timer, interrupts, joypad and a simulated post-boot state were in place, with a pygame window, a trace file and Gameboy Doctor logging. The 11 single <code>cpu_instrs</code> ROMs and <code>instr_timing</code> passed.</p>
+  <p>Gaps that were already known: no memory bank controllers, so only 32 KB ROM-only games could load. Tetris showed its menus and crashed on the transition into a game. The project's own documentation rated the CPU, memory, interrupts and timer as "100%".</p>
+
+  <h2>How the problems were found</h2>
+  <p>The audit split the code into seven areas: CPU, timer and interrupts, memory and I/O, PPU, integration, crash reproduction, and Python quality. Each area was reviewed separately against Pan Docs and the test ROMs. Every finding needed a script that reproduced it, and then the reviews were cross-checked against each other. Findings by severity:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Severity</th><th class="n">Findings</th><th>Examples</th></tr></thead>
+    <tbody>
+      <tr><td>Crash</td><td class="n">3</td><td>Writes to ROM accepted; <code>EI; HALT</code> wild jump; illegal opcodes raise a Python exception</td></tr>
+      <tr><td>Incorrect behaviour</td><td class="n">24</td><td>Echo RAM writes not mirrored; unused I/O bits read 0; signed tiles from the wrong base; LCD off keeps LY counting</td></tr>
+      <tr><td>Timing accuracy</td><td class="n">5</td><td>Timer and PPU advance once per instruction; fixed mode-3 length; no reload-cycle behaviour</td></tr>
+      <tr><td>Latent</td><td class="n">8</td><td>IE overwrite during dispatch ignored; a duplicate, unused decoder</td></tr>
+      <tr><td>Documentation</td><td class="n">6</td><td>The README named a dead file as the timer; comments disagreed with constants</td></tr>
+    </tbody>
+  </table></div>
+  <p>The audit found two misleading "resolved bugs" in the development notes, and both are instructive:</p>
+  <ul>
+    <li>"A loop writes 0x2F to 10 consecutive I/O registers" had been treated by making those registers read-only. That loop was the visible end of the Tetris crash (see 0.2), so the patch hid a symptom.</li>
+    <li>"LY stops when the LCD is off" had been "fixed" by keeping LY counting. The original behaviour was the correct one: with the LCD off, LY reads 0 and the PPU is stopped.</li>
+  </ul>
+  <p>The single largest cause of test failures was timing granularity: the timer and PPU advanced once per instruction, after all of its memory accesses. That alone explained every <code>mem_timing</code> failure. It was the hardest fix, so it was scheduled late (0.7), after the local fixes it would otherwise disturb.</p>
+
+  <div class="note"><h4>Game Boy note: test ROMs as a specification</h4>
+    <p>Hardware test ROMs run on the emulated machine and report their own verdict.</p>
+    <ul>
+      <li><b>Blargg's tests</b> print "Passed" or "Failed" through the serial port, so an emulator can read the result without a screen.</li>
+      <li><b>mooneye tests</b> signal success by loading the Fibonacci numbers 3, 5, 8, 13, 21 and 34 into B, C, D, E, H and L, and then executing <code>LD B,B</code>.</li>
+      <li><b>dmg-acid2</b> draws a face that only comes out right if every PPU rule is right, compared pixel by pixel with a reference image.</li>
+    </ul>
+    <p>Together they turn "behaves like a Game Boy" into a checkable list.</p>
+  </div>
+
+  <h2>The order of work</h2>
+  <ol>
+    <li><b>Crash first:</b> the memory map (0.2), so Tetris could be played and tested.</li>
+    <li><b>More games:</b> cartridge mappers (0.3), so the other test games could load.</li>
+    <li><b>Speed to test with:</b> a first performance pass (0.4), because a test run at a tenth of full speed takes minutes.</li>
+    <li><b>Accuracy area by area:</b> interrupts and timer (0.5), PPU (0.6), then the timing core (0.7).</li>
+    <li><b>Speed with identical behaviour:</b> 0.8 to 0.9.2.</li>
+  </ol>
+  <div class="take"><h3>Takeaway</h3><p>Passing CPU tests says little about a whole system. Most of the defects were in memory, I/O and the PPU, which the CPU tests do not exercise.</p></div>
+</article>
+
+<!-- ============================================================ 0.2 -->
+<article id="v0-2">
+  <p class="ver">0.2 · PR #1 · Memory map</p>
+  <h1>The Tetris crash was the game overwriting its own ROM</h1>
+  <p class="lede">A harmless write to address 0x2000 was stored over the ROM, which turned a loop's jump into a different instruction. Making ROM read-only fixed the crash. The release also made memory and I/O behave as on a DMG.</p>
+  <div class="figs">
+    <div class="fig-n"><b>16/33</b><span>Blargg <i>+1</i></span></div>
+    <div class="fig-n"><b>28/111</b><span>mooneye <i>+4</i></span></div>
+    <div class="fig-n"><b>20/20</b><span>unit tests</span></div>
+    <div class="fig-n"><b>Plays</b><span>Tetris, through game over</span></div>
+  </div>
+
+  <h2>How it was found</h2>
+  <p>The crash reproduction scripted the button presses into a game and traced backwards from the runaway program counter. The chain:</p>
+  <ol>
+    <li>At PC <code>0x0254</code>, Tetris executes <code>LD (0x2000),A</code> with A = 1. On a cartridge with a mapper this selects ROM bank 1. Tetris has no mapper, so the write should do nothing.</li>
+    <li>SnekBoy stored the byte. ROM address <code>0x2000</code> changed from <code>20</code> to <code>01</code>.</li>
+    <li>That byte belongs to a fill loop: <code>JR NZ,-4</code> now decoded as <code>LD BC,0x19FC</code>.</li>
+    <li>The loop never stopped. It wrote <code>0x2F</code> through work RAM, I/O, high RAM and IE, which is the "0x2F in 10 I/O registers" symptom from the old notes.</li>
+    <li>A jump table then read state <code>0x2F</code>, and the PC ran through echo RAM to <code>0xFE00</code>.</li>
+  </ol>
+  <div class="bytes" aria-label="ROM bytes before and after the write">
+    <span class="l">ROM at 0x1FF8</span>
+    <div class="cells"><span>0E</span><span>02</span><span>3E</span><span>2F</span><span>06</span><span>0A</span><span>22</span><span>05</span><span class="ok">20</span><span>FC</span><span>19</span><span>0D</span></div>
+    <span class="l">After the write</span>
+    <div class="cells"><span>0E</span><span>02</span><span>3E</span><span>2F</span><span>06</span><span>0A</span><span>22</span><span>05</span><span class="hit">01</span><span>FC</span><span>19</span><span>0D</span></div>
+  </div>
+  <p>A patch that ignored writes below <code>0x8000</code>, and changed nothing else, ran 2,600 frames to a normal game over. That confirmed the cause before the real fix was written.</p>
+
+  <h2>Changes</h2>
+  <div class="fix"><h3>ROM is read-only</h3><dl>
+    <dt>Hardware</dt><dd>0x0000-0x7FFF is ROM. Writes there go to the mapper chip, if the cartridge has one. A ROM-only cartridge ignores them.</dd>
+    <dt>SnekBoy</dt><dd>Stored the write in the ROM image.</dd>
+    <dt>Fix</dt><dd>Writes to the ROM region are dropped. From 0.3 they go to the mapper.</dd>
+  </dl></div>
+  <div class="fix"><h3>Echo RAM and the unusable area</h3><dl>
+    <dt>Hardware</dt><dd>0xE000-0xFDFF mirrors work RAM at 0xC000-0xDDFF for reads and writes. 0xFEA0-0xFEFF is not usable: on DMG it reads 0x00, and writes do nothing.</dd>
+    <dt>SnekBoy</dt><dd>Mirrored reads only, and treated 0xFEA0-0xFEFF as RAM.</dd>
+    <dt>Fix</dt><dd>Both mirrored; the unusable area ignores writes and reads 0x00 (0xFF while OAM is locked). This also stopped three mooneye <code>ret*_timing</code> tests running away, because they returned through an echo address.</dd>
+  </dl></div>
+  <div class="fix"><h3>Unused bits read as 1</h3><dl>
+    <dt>Hardware</dt><dd>Bits that an I/O register doesn't implement are not driven, and read as 1. IF reads <code>0xE0 | flags</code>, and an unmapped register reads 0xFF.</dd>
+    <dt>SnekBoy</dt><dd>Returned 0 for them.</dd>
+    <dt>Fix</dt><dd>Each register has a mask that is ORed into reads. Blargg's <code>halt_bug</code> passed at once: it checks IF, and IF's upper bits had read 0.</dd>
+  </dl></div>
+  <div class="fix"><h3>Illegal opcodes, FF50, post-boot values</h3><dl>
+    <dt>Hardware</dt><dd>The 11 undefined opcodes (D3 DB DD E3 E4 EB EC ED F4 FC FD) hang the CPU, while the timer and LCD keep running. After the boot ROM, P1 reads 0xCF and DIV is 0xAB.</dd>
+    <dt>SnekBoy</dt><dd>Raised a Python exception and quit. The FF50 handler sat behind a filter and could never run. DIV was set to 0xAB, but its internal counter started at 0, so DIV dropped to 0 on the first cycle.</dd>
+    <dt>Fix</dt><dd>The CPU locks up and prints the opcode once; FF50 is reachable; the counter itself is seeded so that DIV reads 0xAB.</dd>
+  </dl></div>
+  <div class="note"><h4>Game Boy note: DIV is a view of a counter</h4><p>DIV (0xFF04) is the upper 8 bits of a 16-bit counter that advances every T-cycle. Setting "DIV = 0xAB" really means setting the counter to <code>0xAB00</code> plus some phase. The same counter drives the timer, serial and other circuits, which is why its exact value matters later (0.5, 0.7).</p></div>
+
+  <h2>Verification</h2>
+  <div class="scroll"><table><thead><tr><th>Check</th><th>0.1</th><th>0.2</th></tr></thead><tbody>
+    <tr><td>Unit tests</td><td>12/13</td><td>20/20</td></tr>
+    <tr><td>Blargg</td><td>15</td><td>16 (<code>halt_bug</code>)</td></tr>
+    <tr><td>mooneye</td><td>24</td><td>28 (<code>boot_hwio</code>, <code>unused_hwio</code>, <code>if_ie_registers</code>, <code>mbc2/bits_unused</code>)</td></tr>
+    <tr><td>Tetris</td><td>Crash on starting a game</td><td>Plays; level transitions work (checked by hand)</td></tr>
+  </tbody></table></div>
+  <div class="take"><h3>Takeaway</h3><p>Where a crash shows up can be far from its cause. The visible damage, I/O registers full of 0x2F, was three steps downstream of one wrong write. Tracing backwards from the damage finds the cause; patching the damage hides it.</p></div>
+</article>
+
+<!-- ============================================================ 0.3 -->
+<article id="v0-3">
+  <p class="ver">0.3 · PR #2 · Cartridge mappers</p>
+  <h1>Bank switching lets games larger than 32 KB run</h1>
+  <p class="lede">Only 3 of the 12 test games reached their title screen, because the rest need a memory bank controller. 0.3 added MBC1, MBC2, MBC3 with its real-time clock, and MBC5, plus battery saves. A one-line PPU bug that scrambled several games was fixed along the way.</p>
+  <div class="figs">
+    <div class="fig-n"><b>17/33</b><span>Blargg <i>+1</i></span></div>
+    <div class="fig-n"><b>53/111</b><span>mooneye <i>+25</i></span></div>
+    <div class="fig-n"><b>27/28</b><span>mooneye MBC tests</span></div>
+    <div class="fig-n"><b>12/12</b><span>games reach their title</span></div>
+  </div>
+
+  <h2>Changes</h2>
+  <div class="fix"><h3>Memory bank controllers</h3><dl>
+    <dt>Hardware</dt><dd>The CPU sees only 32 KB of ROM: bank 0 at 0x0000-0x3FFF and a switchable bank at 0x4000-0x7FFF. A mapper chip on the cartridge chooses that bank, and the RAM bank at 0xA000-0xBFFF, when the game writes to the ROM range. The cartridge type at header byte 0x147 says which chip is fitted.</dd>
+    <dt>SnekBoy</dt><dd>Had no mappers, and copied any ROM flat over the address space, up to 64 KB over 0x8000-0xFFFF.</dd>
+    <dt>Fix</dt><dd>Mappers in <code>src/cartridge.py</code>, chosen from the header. A switch copies the new 16 KB bank into the memory array, so the very frequent ROM reads stay a plain array index and only the rare switch pays.</dd>
+  </dl></div>
+  <div class="note"><h4>Game Boy note: MBC1 in four registers</h4>
+    <div class="scroll"><table><thead><tr><th>Write to</th><th>Effect</th></tr></thead><tbody>
+      <tr><td><code>0x0000-0x1FFF</code></td><td>RAM enable: low nibble 0xA enables, anything else disables</td></tr>
+      <tr><td><code>0x2000-0x3FFF</code></td><td>Low 5 bits of the ROM bank; a value of 0 selects 1</td></tr>
+      <tr><td><code>0x4000-0x5FFF</code></td><td>2 more bits: upper ROM bank bits or the RAM bank</td></tr>
+      <tr><td><code>0x6000-0x7FFF</code></td><td>Banking mode: whether those 2 bits also apply to 0x0000-0x3FFF and RAM</td></tr>
+    </tbody></table></div>
+    <p>MBC3 adds a real-time clock. Writing 0 then 1 to 0x6000-0x7FFF latches the time into readable registers. Tetris's write of 1 to 0x2000, the cause of the 0.2 crash, is an MBC1-style bank select that its ROM-only board ignores.</p>
+  </div>
+  <div class="fix"><h3>Signed tile numbers count from 0x9000</h3><dl>
+    <dt>Hardware</dt><dd>With LCDC bit 4 clear, background tile numbers are signed (-128..127) relative to 0x9000, which covers 0x8800-0x97FF.</dd>
+    <dt>SnekBoy</dt><dd>Used 0x8800 as the base, shifting every tile by 128.</dd>
+    <dt>How found</dt><dd>The audit's dmg-acid2 diff, and scrambled title screens in Super Mario Land and Dr. Mario once they could load. It was planned for the graphics release and pulled forward.</dd>
+  </dl></div>
+  <div class="fix"><h3>STOP, and cartridges that under-declare RAM</h3><dl>
+    <dt>Hardware</dt><dd>On DMG, STOP resets DIV and halts the CPU and timer until a button is pressed.</dd>
+    <dt>SnekBoy</dt><dd>Acted on KEY1 (0xFF4D), the Game Boy Color speed switch. The combined <code>cpu_instrs</code> ROM reached STOP with no wake source and hung.</dd>
+    <dt>Fix</dt><dd>DMG STOP. Separately, cartridge types "with RAM" whose header gives RAM size 0 now get 8 KB, as other emulators do; Blargg's <code>halt_bug</code> needs it.</dd>
+  </dl></div>
+  <p>Battery-backed RAM is loaded from <code>&lt;rom&gt;.sav</code> at start and written on quit, with the MBC3 clock in <code>&lt;rom&gt;.rtc</code>.</p>
+
+  <h2>Verification</h2>
+  <p>Unit tests 20 → 32, covering banking per mapper, RAM enable, the clock and saves. The combined <code>cpu_instrs</code> (a 64 KB MBC1 ROM) passes. mooneye's MBC set went from 1 to 27 of 28; the remaining one is the MBC1 multicart wiring, used only by compilation cartridges.</p>
+  <div class="take"><h3>Takeaway</h3><p>Choose the data layout for the common operation. Copying 16 KB on a bank switch looks wasteful, but a game switches banks hundreds of times a second and reads ROM millions of times.</p></div>
+</article>
+
+<!-- ============================================================ 0.4 -->
+<article id="v0-4">
+  <p class="ver">0.4 · PR #3 · Speed, part 1</p>
+  <h1>Profiling first: the PPU and display cost more than the CPU</h1>
+  <p class="lede">At 4.5 frames per second, testing a game took minutes. A profile showed that most of the time went to drawing, not emulating. Three changes doubled or tripled the speed, and the output stayed pixel-identical.</p>
+  <div class="figs">
+    <div class="fig-n"><b>9.6</b><span>Tetris fps (was 4.5)</span></div>
+    <div class="fig-n"><b>15.9</b><span>Super Mario Land fps (was 5.2)</span></div>
+    <div class="fig-n"><b>12/12</b><span>games pixel-identical</span></div>
+  </div>
+  <h2>Changes</h2>
+  <div class="fix"><h3>The PPU reads video memory directly</h3><dl>
+    <dt>Found</dt><dd>The PPU fetched every tile byte through <code>Memory.read_byte</code>, which applies the <i>CPU's</i> access rules, once or more per pixel.</dd>
+    <dt>Fix</dt><dd>The PPU reads the memory array directly. A table of 65,536 entries maps each pair of tile bytes to its 8 colour numbers, so a tile row costs one lookup. This also fixed Gameboy Doctor mode freezing the picture: its fake LY value, meant only for the CPU, had been reaching the PPU.</dd>
+  </dl></div>
+  <div class="note"><h4>Game Boy note: 2 bits per pixel, split across two bytes</h4><p>A tile is 8×8 pixels in 16 bytes. Each row is two bytes: the first holds the low bit of each pixel's colour number and the second the high bit, with bit 7 as the leftmost pixel. The colour number (0-3) then goes through a palette register (BGP, OBP0, OBP1) to one of four shades.</p></div>
+  <div class="fix"><h3>Fast reads, and one call per frame for the display</h3><dl>
+    <dt>Found</dt><dd>Plain ROM and RAM reads went through every special-region check. The Gameboy Doctor setting was read from the environment on every LY read. The display drew 23,040 pixels with one pygame call each.</dd>
+    <dt>Fix</dt><dd>ROM, work RAM and high RAM return early. The setting is read once. The frame goes to pygame as one block of colour numbers on an 8-bit surface with a 4-entry palette.</dd>
+  </dl></div>
+  <h2>Verification</h2>
+  <p>This release introduced the comparison method used for every later release. Before any change, a script recorded CPU registers, cycle count and a hash of the screen for 12 games every 30 frames, over 600 frames. After each change, the same run had to give identical fingerprints. Blargg and mooneye results stayed at 17 and 53.</p>
+  <div class="take"><h3>Takeaway</h3><p>Measure before optimising. The obvious suspect, the CPU, was not where the time went.</p></div>
+</article>
+
+<!-- ============================================================ 0.5 -->
+<article id="v0-5">
+  <p class="ver">0.5 · PR #4 · Interrupts and timer</p>
+  <h1>Interrupts and the timer, down to the edge cases</h1>
+  <p class="lede">The basics worked, but mooneye's tests for the order of events failed: when EI takes effect, what happens when DI follows it, when an interrupt is chosen, and how the timer reacts to writes. Each was fixed against the specific test that probes it.</p>
+  <div class="figs">
+    <div class="fig-n"><b>62/111</b><span>mooneye <i>+9</i></span></div>
+    <div class="fig-n"><b>42</b><span>unit tests (was 32)</span></div>
+    <div class="fig-n"><b>12/12</b><span>games pixel-identical</span></div>
+  </div>
+  <h2>Changes</h2>
+  <div class="fix"><h3>EI and DI</h3><dl>
+    <dt>Hardware</dt><dd>EI enables interrupts after the <i>next</i> instruction. DI disables them at once and cancels a pending EI. A second EI does not restart the delay.</dd>
+    <dt>SnekBoy</dt><dd>Let <code>EI; DI</code> through an interrupt, and restarted the delay on <code>EI; EI</code>.</dd>
+    <dt>Tests</dt><dd>mooneye <code>rapid_di_ei</code>, <code>ei_sequence</code>.</dd>
+  </dl></div>
+  <div class="fix"><h3>Dispatch can be cancelled by its own push</h3><dl>
+    <dt>Hardware</dt><dd>Dispatch takes 5 M-cycles: two internal, the push of PC's high byte, the push of the low byte, then the jump. The interrupt is chosen <i>after</i> the high byte is pushed. If SP was 0x0000, that push writes to IE (0xFFFF) and can remove the interrupt being dispatched, and the CPU then jumps to 0x0000.</dd>
+    <dt>Tests</dt><dd>mooneye <code>ie_push</code>.</dd>
+  </dl></div>
+  <div class="fix"><h3>EI followed by HALT</h3><dl>
+    <dt>Hardware</dt><dd>When HALT runs with IME clear and an interrupt already pending, the CPU doesn't halt, and the next byte is read twice (the HALT bug). After <code>EI; HALT</code>, IME is set by the time the interrupt is serviced, so the handler returns to the HALT itself.</dd>
+    <dt>SnekBoy</dt><dd>Applied the HALT bug to the handler's first instruction instead, which made it jump wildly. This was one of the audit's three crash-class findings.</dd>
+  </dl></div>
+  <div class="fix"><h3>The timer is an edge detector</h3><dl>
+    <dt>Hardware</dt><dd>TIMA ticks on the falling edge of one bit of the system counter (bit 9, 3, 5 or 7, chosen by TAC) ANDed with the enable bit. So any write that drops that signal from 1 to 0 also ticks TIMA, such as resetting the counter through DIV.</dd>
+    <dt>SnekBoy</dt><dd>Reset DIV without the edge.</dd>
+    <dt>Tests</dt><dd>mooneye's four <code>*_div_trigger</code> tests.</dd>
+  </dl></div>
+  <div class="note"><h4>Game Boy note: the overflow cycle</h4><p>When TIMA overflows, it reads 0x00 for one M-cycle. Only in the next M-cycle is TMA copied in and the timer interrupt requested. Writing TIMA during the first cycle cancels the reload. During the reload cycle, a TIMA write is ignored and a TMA write goes through to TIMA (mooneye <code>tima_write_reloading</code>, <code>tma_write_reloading</code>).</p></div>
+  <p>Also removed: <code>src/timer.py</code>, an unused module that the README had presented as the timer. The real timer had always been in <code>cpu.py</code>.</p>
+  <div class="take"><h3>Takeaway</h3><p>For interrupt logic the order of events is the specification. Each fix here moves one action by one M-cycle or one step in a sequence, and each has a test ROM that tells the two orders apart.</p></div>
+</article>
+
+<!-- ============================================================ 0.6 -->
+<article id="v0-6">
+  <p class="ver">0.6 · PR #5 · Graphics</p>
+  <h1>dmg-acid2 from 818 wrong pixels to zero</h1>
+  <p class="lede">The PPU drew most games acceptably, but dmg-acid2 differed from its reference in 818 pixels. Wario Land II stopped at a white screen after its intro. The fixes cover the window, sprite priority, LCD on/off and the STAT interrupt line.</p>
+  <div class="figs">
+    <div class="fig-n"><b>0</b><span>wrong acid2 pixels (was 818)</span></div>
+    <div class="fig-n"><b>66/111</b><span>mooneye <i>+4</i></span></div>
+    <div class="fig-n"><b>53</b><span>unit tests</span></div>
+  </div>
+  <h2>Changes</h2>
+  <div class="fix"><h3>The window has its own line counter</h3><dl>
+    <dt>Hardware</dt><dd>The window keeps an internal line counter that advances only on lines where the window was actually drawn. If a game hides the window for some lines, it resumes where it left off rather than at LY − WY. It is also hidden when LCDC bit 0 is off, and for WX below 7 it shifts left rather than clamping.</dd>
+    <dt>How found</dt><dd>The dmg-acid2 difference, which the audit traced to the missing counter.</dd>
+  </dl></div>
+  <div class="fix"><h3>Sprite priority uses colour numbers</h3><dl>
+    <dt>Hardware</dt><dd>A sprite with the "behind background" flag is hidden only where the background's colour <i>number</i> is 1-3, whatever the palette makes that look like. Where sprites overlap on DMG, the one with lower X wins, then the lower OAM index, even when the winner is itself hidden by the background.</dd>
+    <dt>SnekBoy</dt><dd>Compared the final shade, and let later sprites draw over earlier ones.</dd>
+  </dl></div>
+  <div class="fix"><h3>LCD off stops the PPU</h3><dl>
+    <dt>Hardware</dt><dd>With LCDC bit 7 clear, LY reads 0, the mode is 0, no LCD interrupts fire and the screen is blank. Turning it on restarts at line 0, and the first line has no OAM-search period.</dd>
+    <dt>SnekBoy</dt><dd>Kept LY counting and interrupts firing. This was the earlier "resolved bug" that the audit flagged as wrong.</dd>
+  </dl></div>
+  <div class="fix"><h3>The STAT interrupt fires on a rising edge</h3><dl>
+    <dt>Hardware</dt><dd>The four STAT sources (HBlank, VBlank, OAM, LY=LYC) are ORed into one line, and the interrupt is requested only when that line goes from 0 to 1. If one source is already active, a second becoming active requests nothing. This is called "STAT blocking".</dd>
+    <dt>SnekBoy</dt><dd>Fired once per source on entry.</dd>
+    <dt>Also</dt><dd>STAT writes keep the read-only bits; an LYC write re-checks the match; line 153 reads LY 0 after its first few dots.</dd>
+  </dl></div>
+  <h2>Verification</h2>
+  <p>The method gained screens with input: 11 games driven by scripted button presses, 20 screenshots each, compared with 0.5. Wario Land II now continues past its intro. The other games differed only by about a frame of timing, which is expected when interrupt timing changes. Blargg stayed at 17.</p>
+  <div class="take"><h3>Takeaway</h3><p>A reference image catches what a "looks right" check misses. Most of the 818 pixels were in places a player would never notice, and each traced back to a real rule.</p></div>
+</article>
+
+<!-- ============================================================ 0.7 -->
+<article id="v0-7">
+  <p class="ver">0.7 · PR #6 · Timing</p>
+  <h1>Every memory access on its own cycle</h1>
+  <p class="lede">The largest finding of the audit: the timer and PPU advanced once per instruction, after all of its memory accesses. 0.7 places each access on its own M-cycle and brings the timer, PPU and DMA up to that cycle before any access that can see them. All DMG-relevant mooneye tests passed afterwards.</p>
+  <div class="figs">
+    <div class="fig-n"><b>26/33</b><span>Blargg <i>+9</i></span></div>
+    <div class="fig-n"><b>93/111</b><span>mooneye <i>+27</i></span></div>
+    <div class="fig-n"><b>65</b><span>unit tests</span></div>
+    <div class="fig-n"><b>−5%</b><span>speed, the cost</span></div>
+  </div>
+  <h2>The problem</h2>
+  <p><code>LDH A,(0x05)</code> reads TIMA. It takes 3 M-cycles: fetch the opcode, fetch the operand, read the register. On hardware the read happens in the third M-cycle, so it sees the timer as it is 8 T-cycles into the instruction. SnekBoy ran the whole instruction and then advanced the timer by 12, so every read saw the state from the instruction's start.</p>
+  <div class="cyc" aria-label="Cycles of LDH A,(n)">
+    <div class="h">M-cycle</div><div class="h">1</div><div class="h">2</div><div class="h">3</div>
+    <div class="h">Hardware</div><div>fetch opcode</div><div>fetch operand</div><div class="rd">read TIMA here</div>
+    <div class="h">0.6</div><div class="bad">read TIMA here</div><div>(timer frozen)</div><div>timer +12 after</div>
+  </div>
+  <p>Blargg's <code>mem_timing</code> tests measure exactly this, and they all failed. So did mooneye's instruction-timing tests, which time pushes and calls against the timer.</p>
+  <h2>Changes</h2>
+  <div class="fix"><h3>Per-access catch-up</h3><dl>
+    <dt>Design</dt><dd>Each instruction counts its M-cycles as it goes: fetches, reads, writes, and the internal delays in PUSH, CALL, RST, RET cc and dispatch (<code>_acc</code>). Before any access that can observe another component (I/O, VRAM, OAM, or anything during DMA), the timer, PPU and DMA catch up to that access's cycle (<code>_synced</code>). The rest is advanced when the instruction ends.</dd>
+    <dt>Why</dt><dd>Advancing every component after every M-cycle would also be correct, but several times slower. Catching up only before an observable access gives the same results, because nothing else can tell the difference.</dd>
+  </dl></div>
+  <div class="fix"><h3>Real OAM DMA</h3><dl>
+    <dt>Hardware</dt><dd>A write to 0xFF46 starts a copy of 160 bytes to OAM, one byte per M-cycle after one setup cycle. The CPU keeps running but can use only high RAM; OAM reads 0xFF. A new write restarts the copy. Sources 0xE0-0xFF read work RAM.</dd>
+    <dt>SnekBoy</dt><dd>Copied instantly and added 640 cycles to the clock.</dd>
+  </dl></div>
+  <div class="fix"><h3>The pixel-transfer length varies</h3><dl>
+    <dt>Hardware</dt><dd>Mode 3 lasts 172 dots plus the fine X scroll (SCX mod 8), 6 dots if the window starts on the line, and a stall for each sprite (6 dots, plus up to 5 depending on its position within a background tile). HBlank starts later by the same amount, and games timing raster effects depend on that.</dd>
+    <dt>Also</dt><dd>LY shows the next line 4 dots early; the OAM and VRAM locks change on their own dots around modes 2 and 3.</dd>
+  </dl></div>
+  <div class="fix"><h3>Serial and joypad interrupts</h3><dl>
+    <dt>Hardware</dt><dd>An internally clocked transfer shifts one bit per falling edge of system-counter bit 8 (8192 Hz), then raises the serial interrupt. The joypad interrupt fires when a <i>selected</i> P1 line goes from 1 to 0.</dd>
+    <dt>SnekBoy</dt><dd>Never raised the serial interrupt; raised the joypad interrupt on any key, selected or not.</dd>
+  </dl></div>
+  <div class="fix"><h3>Found during verification: an LYC=0 double interrupt</h3><dl>
+    <dt>Symptom</dt><dd>Final Fantasy Legend stopped at a white screen with the new timing.</dd>
+    <dt>Cause</dt><dd>LY reads 0 from early in line 153 through line 0. The new "LY=LYC reads 0 at the end of a line" rule cleared the flag between those two lines, so an LYC=0 STAT interrupt fired twice. The game took the second one inside its own handler and never reached its title.</dd>
+    <dt>Fix</dt><dd>The flag carries from line 153 into line 0.</dd>
+  </dl></div>
+  <h2>What still fails, and why</h2>
+  <div class="scroll"><table><thead><tr><th>Failing</th><th>Reason</th></tr></thead><tbody>
+    <tr><td>17 mooneye boot and register tests</td><td>They check the power-on state of other models (DMG0, MGB, SGB, CGB, AGB). SnekBoy is a DMG-ABC.</td></tr>
+    <tr><td>mooneye <code>multicart_rom_8Mb</code></td><td>MBC1 multicart wiring, not implemented</td></tr>
+    <tr><td>Blargg <code>oam_bug</code> (6 of 9)</td><td>The DMG OAM corruption bug is not emulated</td></tr>
+    <tr><td>Blargg <code>interrupt_time</code></td><td>Uses Game Boy Color double speed</td></tr>
+  </tbody></table></div>
+  <div class="take"><h3>Takeaway</h3><p>Synchronise lazily, but exactly. A component only has to be up to date when something can observe it. Identifying every observation point is what makes this correct, and it became the basis of the performance work in 0.9.1.</p></div>
+</article>
+
+<!-- ============================================================ 0.8 -->
+<article id="v0-8">
+  <p class="ver">0.8 · PR #7 · CPU speed</p>
+  <h1>Three times faster, with every state identical</h1>
+  <p class="lede">With accuracy in place, speed became the problem: Tetris ran at 8.8 fps. Four profiled steps took it to 28, and each step had to reproduce the previous one exactly.</p>
+  <div class="figs">
+    <div class="fig-n"><b>28.2</b><span>Tetris fps (was 8.8)</span></div>
+    <div class="fig-n"><b>36.4</b><span>Super Mario Land fps (was 15.4)</span></div>
+    <div class="fig-n"><b>0</b><span>changed results</span></div>
+  </div>
+  <h2>Method</h2>
+  <ol>
+    <li><b>Measure first:</b> 120 frames under cProfile, sorted by each function's own time. Every change was picked from that list.</li>
+    <li><b>Freeze a reference before touching code:</b> state fingerprints of 12 games and screenshots of 11, recorded from a clean copy of 0.7.</li>
+    <li><b>One change per step, then prove nothing moved:</b> unit tests, fingerprints, screens, the test ROMs and dmg-acid2.</li>
+    <li><b>A test per shortcut:</b> it compares the fast path with the original logic on random input, so a later edit can't drift silently.</li>
+  </ol>
+  <div class="scroll"><table><thead><tr><th>Hotspot in 0.7 (Tetris)</th><th class="n">Own time</th><th>Why</th></tr></thead><tbody>
+    <tr><td><code>memory.read_byte</code></td><td class="n">4.2 s</td><td>5.6 M calls: the timer re-read TAC/TMA/IF through the bus every M-cycle</td></tr>
+    <tr><td><code>execute_instruction</code></td><td class="n">2.7 s</td><td>An if/elif chain over about 55 instruction types</td></tr>
+    <tr><td><code>decode_instruction_params</code></td><td class="n">2.2 s</td><td>An if-chain over 245 opcodes, returning operand names as strings</td></tr>
+    <tr><td><code>_update_timers</code></td><td class="n">1.7 s</td><td>A Python loop once per M-cycle, even with the timer off</td></tr>
+    <tr><td>Flag writes</td><td class="n">1.5 s</td><td>Four layers of calls per flag</td></tr>
+  </tbody></table></div>
+  <h2>Steps</h2>
+  <div class="scroll"><table><thead><tr><th>Step</th><th class="n">Tetris fps</th><th class="n">SML fps</th></tr></thead><tbody>
+    <tr><td>0.7 baseline</td><td class="n">8.8</td><td class="n">15.4</td></tr>
+    <tr><td>Timer counts edges arithmetically; IE/IF read directly</td><td class="n">11.7</td><td class="n">32.0</td></tr>
+    <tr><td>Flags as one byte</td><td class="n">13.2</td><td class="n">31.5</td></tr>
+    <tr><td>Opcode dispatch table</td><td class="n">25.3</td><td class="n">34.5</td></tr>
+    <tr><td>Fast paths for reads and register access</td><td class="n">28.2</td><td class="n">36.4</td></tr>
+  </tbody></table></div>
+  <div class="fix"><h3>Counting timer edges instead of looping</h3><dl>
+    <dt>Idea</dt><dd>The number of falling edges of counter bit k between values <code>old</code> and <code>new</code> is <code>(new &gt;&gt; (k+1)) − (old &gt;&gt; (k+1))</code>. A batch of N cycles costs one subtraction, not N loop iterations.</dd>
+    <dt>Exact path kept</dt><dd>While an overflow or reload is in progress, during a serial transfer, or when the batch itself would overflow TIMA.</dd>
+  </dl></div>
+  <div class="fix"><h3>A dispatch table derived from the decoder</h3><dl>
+    <dt>Idea</dt><dd>At start-up, each opcode is decoded once with probe fetch functions. They record whether a byte or word is fetched and return a marker object; wherever the marker lands is where the real operand goes at run time. The table holds (handler, operands, operand kind, slot, cycles).</dd>
+    <dt>Why derived</dt><dd>Writing 500 handlers by hand would risk new bugs. Deriving the table from the existing decoder keeps fetch order and cycle counts identical by construction, and a test checks every opcode against the decoder.</dd>
+  </dl></div>
+  <div class="note"><h4>Python note: what costs time</h4><p>In CPython, the expensive operations are function calls and attribute lookups, not arithmetic. A flag write that went through a property, a helper, an Enum lookup and a bit-field class cost four calls; a mask on one integer costs none. Most gains in 0.8 to 0.9.2 come from removing calls per emulated instruction.</p></div>
+  <p><b>Why Tetris gained more than Super Mario Land:</b> Tetris busy-waits. In 120 frames it executed about 290,000 each of LDH, AND and JR out of 893,000 instructions: almost all of them are the loop <code>ldh a,(STAT); and 3; jr nz</code>, so cheaper instructions help it directly. Super Mario Land sits in HALT, and a halted CPU still cost one timer and PPU call per idle M-cycle. That became the target for 0.9.</p>
+  <div class="take"><h3>Takeaway</h3><p>Optimise against a frozen reference. "It still looks fine" doesn't prove anything; identical registers, cycle counts and screens do.</p></div>
+</article>
+
+<!-- ============================================================ 0.9 -->
+<article id="v0-9">
+  <p class="ver">0.9 · PR #8 · Handlers and HALT skip-ahead</p>
+  <h1>A halted CPU jumps to the next event</h1>
+  <p class="lede">Two changes, one for each kind of game. Dedicated handlers sped up busy-waiting games; skipping idle time sped up games that wait with HALT, Super Mario Land by three times. Six of 11 games reached full speed.</p>
+  <div class="figs">
+    <div class="fig-n"><b>116</b><span>Super Mario Land fps (was 36)</span></div>
+    <div class="fig-n"><b>36.1</b><span>Tetris fps (was 29)</span></div>
+    <div class="fig-n"><b>6/11</b><span>games at full speed</span></div>
+  </div>
+  <h2>Changes</h2>
+  <div class="fix"><h3>Dedicated handlers from templates</h3><dl>
+    <dt>Problem</dt><dd>After 0.8, handlers still received operand names as text ("B", "(HL)", "NZ") and resolved them on every call.</dd>
+    <dt>Fix</dt><dd><code>src/fast_ops.py</code> generates 439 functions from templates (loads, 8-bit ALU, INC/DEC, jumps, calls, returns, LDH, all CB operations). Each has its register or condition written in and computes all four flags as one byte expression, for example AND: <code>f = 0xA0 if res == 0 else 0x20</code>.</dd>
+    <dt>Test</dt><dd>Each dedicated handler against the generic one on 40 random states: registers, flags, memory, the bus timing and the returned cycles. A planted half-carry bug, and a removed internal cycle in <code>RET cc</code>, both made it fail.</dd>
+  </dl></div>
+  <div class="fix"><h3>HALT skip-ahead</h3><dl>
+    <dt>Insight</dt><dd>The PPU changes state only at fixed dots (76, 80, the end of mode 3, 452, 456, dot 4 of line 153), and it reads nothing a halted CPU can change. So advancing it 1,000 cycles at once gives the same result as 250 steps of 4. The only thing to protect is <i>when the CPU notices</i> an interrupt.</dd>
+    <dt>Fix</dt><dd>A halted CPU advances to the earliest of the frame's end, the next PPU event, or the cycle where TIMA overflows: <code>((c &gt;&gt; s) + 256 − TIMA) &lt;&lt; s</code> for counter c and rate shift s. It falls back to single M-cycles during DMA, serial, or a TIMA reload.</dd>
+  </dl></div>
+  <h2>A stricter check: instruction traces</h2>
+  <p>Skipping changes how often <code>step()</code> is called, so the verification gained a rolling SHA-1 over every executed instruction's cycle count and registers, with halted M-cycles left out. One instruction executed a single cycle early changes every later hash.</p>
+  <div class="fix"><h3>Found during verification: the cartridge clock</h3><dl>
+    <dt>Symptom</dt><dd>Pokémon Gold's trace differed from the very first chunk, while its states and screens matched.</dd>
+    <dt>Cause</dt><dd>Re-running the unchanged 0.8 now gave the new trace too. Gold's MBC3 clock reads the host time, so its registers depended on the time of day.</dd>
+    <dt>Fix</dt><dd>All harnesses freeze the host clock. Any input from outside the emulator (time, buttons, save files) must be pinned for a comparison to mean anything.</dd>
+  </dl></div>
+  <h2>Small items</h2>
+  <ul>
+    <li><b>Fixed frame ends:</b> the frame loop used to drop the few cycles the last instruction ran past each frame, so emulated time ran about 0.02% slow. Frame ends are now fixed multiples of 70,224.</li>
+    <li><b>Version in the window title</b>, read from a single <code>src/version.py</code>.</li>
+    <li><b>Palette:</b> in the widely used green palette, shade 1 is almost as light as shade 0, so light-grey detail nearly vanishes. The new default keeps shades 0, 2 and 3 and puts shade 1 halfway, giving even steps. P switches between green, classic and grey. A real DMG's reflective LCD has no exact colour; every palette is an approximation.</li>
+  </ul>
+  <div class="pal" aria-label="Default green palette"><span style="background:#9bbc0f"></span><span style="background:#658f1f"></span><span style="background:#306230"></span><span style="background:#0f380f"></span></div>
+  <div class="take"><h3>Takeaway</h3><p>Find the invariant that makes a shortcut exact. "The PPU is batch-invariant, and only the interrupt points matter" turned an approximation into an exact skip.</p></div>
+</article>
+
+<!-- ============================================================ 0.9.1 -->
+<article id="v0-9-1">
+  <p class="ver">0.9.1 · PR #9 · Lazy sync</p>
+  <h1>Bring the timer and PPU up to date only when someone looks</h1>
+  <p class="lede">In the slower games, about 40% of the time went to advancing the timer and PPU after every instruction, although nothing could see them change. 0.9.1 lets the CPU owe them cycles until an access, an interrupt point or the end of the frame.</p>
+  <div class="figs">
+    <div class="fig-n"><b>−92%</b><span>PPU update calls (Kirby)</span></div>
+    <div class="fig-n"><b>+12–22%</b><span>speed of busy-waiting games</span></div>
+    <div class="fig-n"><b>0</b><span>changed results</span></div>
+  </div>
+  <h2>Idea</h2>
+  <p>A running CPU can observe the timer and PPU in only three ways:</p>
+  <ol>
+    <li>Through an I/O, VRAM or OAM access. These already caught up before the access, since 0.7.</li>
+    <li>Through an interrupt, which is raised only at a PPU event or a TIMA overflow.</li>
+    <li>At the end of a frame, when the screen is shown and buttons are read.</li>
+  </ol>
+  <p>So the cycles of other instructions can be owed until one of those points.</p>
+  <div class="fix"><h3>Implementation</h3><dl>
+    <dt>Owed cycles</dt><dd><code>_lag</code> is folded into the existing catch-up bookkeeping at the start of each instruction. Every existing catch-up then pays old and new cycles together, with no new code paths.</dd>
+    <dt>Budget</dt><dd>The cycles until the next point where an interrupt could be raised, from <code>dots_to_next_event()</code> (built for the HALT skip) and the TIMA overflow formula. Landing exactly on an event must sync, so the comparison is strict.</dd>
+    <dt>Resets</dt><dd>A write to 0xFF00-0xFF7F resets the budget, because TAC, LCDC, LYC, STAT and DIV can move the next event. During DMA, serial or a TIMA reload the budget is 0, and syncing happens every instruction as before.</dd>
+  </dl></div>
+  <h2>Testing it properly</h2>
+  <p>A random-program test compares the lazy frame runner with plain stepping: registers before every instruction, and timer, PPU and screen at the end. Its first version caught none of four planted bugs. The programs read I/O so often that the existing catch-up hid every late sync. Adding delay loops without I/O, as real games have, made the test strict. The stricter test then found a real bug: on an illegal opcode the owed cycles were dropped.</p>
+  <div class="fix"><h3>Tried and rejected</h3><dl>
+    <dt>Idea</dt><dd>A longer budget that skips the PPU events which can't raise an interrupt.</dd>
+    <dt>Result</dt><dd>Correct, but only about 3% faster. Not worth a second correctness argument, so it was reverted. The budget length was not the bottleneck; the number of calls per instruction was.</dd>
+  </dl></div>
+  <div class="take"><h3>Takeaway</h3><p>A test that can't fail proves nothing. Planting bugs on purpose (mutation testing) showed that the first test was blind, and why.</p></div>
+</article>
+
+<!-- ============================================================ 0.9.2 -->
+<article id="v0-9-2">
+  <p class="ver">0.9.2 · PR #10 · Frame loop</p>
+  <h1>One inline loop per frame</h1>
+  <p class="lede">After the lazy sync, most of the remaining time was per-instruction overhead: about five method calls and dozens of attribute lookups for values that don't change during a frame. 0.9.2 runs the common case in one loop, with those values in local variables.</p>
+  <div class="figs">
+    <div class="fig-n"><b>51.4</b><span>Kirby gameplay fps (was 38.7)</span></div>
+    <div class="fig-n"><b>65.9</b><span>Zelda DX gameplay fps (was 53.2)</span></div>
+    <div class="fig-n"><b>5/11</b><span>games at full speed in gameplay</span></div>
+  </div>
+  <h2>A better benchmark first</h2>
+  <p>Testing 0.9.1 by hand, games felt slower once in play than the benchmark suggested. The benchmark covered the first 360 frames, mostly intros and title screens. A gameplay benchmark now presses Start and A to get into the game and measures frames 700-1200. Pokémon Red, for example, ran at 83 fps in its intro but 45 in gameplay. Both numbers are reported from 0.9.2 on.</p>
+  <h2>Change</h2>
+  <div class="fix"><h3>The inline frame loop</h3><dl>
+    <dt>Fast path</dt><dd>While the CPU is running, PC is in ROM, work RAM or high RAM, no DMA runs and no interrupt is due, one loop does everything inline. It checks interrupts, reads the opcode and operands straight from the memory array (with the same per-access timing as the bus), calls the handler, counts down EI and does the lazy-sync accounting.</dd>
+    <dt>Fallback</dt><dd>Anything else uses the existing <code>step()</code> for that one instruction: halted, stopped, locked, the HALT bug, DMA, PC elsewhere, interrupt dispatch, an illegal opcode. The rare cases keep their verified code.</dd>
+    <dt>Hook</dt><dd><code>_on_instruction</code> is called before each instruction when set. The instruction-trace harness uses it, so it checks the fast loop itself rather than <code>step()</code>.</dd>
+  </dl></div>
+  <h2>Testing</h2>
+  <p>The random-program test gained 16-bit-address accesses to I/O registers, and it now also compares <i>when</i> each I/O access happens inside its instruction. That second addition was needed: a planted bug that put a word operand's read 4 cycles early passed the state comparison. A 4-cycle shift changes the outcome only when an event falls inside those 4 cycles, which is rare in random programs. All five planted bugs now fail the test.</p>
+  <div class="scroll"><table><thead><tr><th>Gameplay fps</th><th class="n">0.9.1</th><th class="n">0.9.2</th></tr></thead><tbody id="gp"></tbody></table></div>
+  <p>Busy-waiting games gained most. HALT-heavy games changed little, because their time is in halted stretches, which still go through <code>step()</code>. Run-to-run noise is about ±5%.</p>
+  <div class="take"><h3>Takeaway</h3><p>Benchmark what users do. The intro benchmark was accurate but not representative, and a user's remark exposed it.</p></div>
+</article>
+
+<!-- ============================================================ METHOD -->
+<article id="method">
+  <p class="ver">Reference</p>
+  <h1>How a release proves it did what it says</h1>
+  <p class="lede">The verification toolkit grew with the project. Each tool was added when the previous ones could no longer prove a change correct.</p>
+  <div class="scroll"><table><thead><tr><th>Tool</th><th>Since</th><th>What it proves</th></tr></thead><tbody>
+    <tr><td>Test ROMs (Blargg, mooneye, dmg-acid2)</td><td>0.1</td><td>Hardware behaviour, one rule per test</td></tr>
+    <tr><td>State fingerprints</td><td>0.4</td><td>Registers, cycle count and screen hash of 12 games every 30 frames are unchanged</td></tr>
+    <tr><td>Screens with input</td><td>0.6</td><td>20 screenshots per game with scripted presses: behaviour in play, not only in the attract mode</td></tr>
+    <tr><td>Differential unit tests</td><td>0.8</td><td>A shortcut equals the code it replaces on random states</td></tr>
+    <tr><td>Planted bugs</td><td>0.9</td><td>The differential test can actually fail</td></tr>
+    <tr><td>Instruction trace hashes</td><td>0.9</td><td>Every executed instruction, cycle for cycle</td></tr>
+    <tr><td>Pinned host inputs</td><td>0.9</td><td>Comparisons are repeatable (frozen cartridge clock, scripted buttons)</td></tr>
+    <tr><td>Gameplay benchmark</td><td>0.9.2</td><td>Speed numbers reflect play, not intros</td></tr>
+  </tbody></table></div>
+  <h2>Rules that came out of it</h2>
+  <ul>
+    <li>Record the reference from a clean copy of the previous release, never from the working tree.</li>
+    <li>Don't edit the source while a background check runs: each test process imports the code when it starts.</li>
+    <li>For behaviour changes, only the targeted tests may change. For optimisations, nothing may change.</li>
+    <li>Report the number measured, including when it is lower than expected. The 0.9.1 estimate was +35-50%; the measurement was +12-22%.</li>
+  </ul>
+</article>
+
+<!-- ============================================================ NEXT -->
+<article id="next">
+  <p class="ver">Reference</p>
+  <h1>Open problems</h1>
+  <p class="lede">What 0.9.2 does not do, and what would be needed.</p>
+  <div class="scroll"><table><thead><tr><th>Item</th><th>State</th><th>What it would take</th></tr></thead><tbody>
+    <tr><td>Audio (APU)</td><td>Not implemented</td><td>Four channels, the frame sequencer, and mixing to the host at a steady rate. Also costs speed.</td></tr>
+    <tr><td>Speed in gameplay</td><td>6 of 11 games at 51-55 fps on Python 3.10</td><td>Measure Python 3.11+ on the current version (on 0.9 it was about 1.9× faster); a tile-row cache in the PPU; idle-loop detection</td></tr>
+    <tr><td>OAM corruption bug</td><td>Not emulated</td><td>Corrupt OAM rows on 16-bit increments in mode 2; Blargg <code>oam_bug</code></td></tr>
+    <tr><td>MBC1 multicart</td><td>Not implemented</td><td>Detect the multicart wiring and use the 4-bit bank layout</td></tr>
+    <tr><td>Mid-line raster effects</td><td>Not shown; lines are drawn whole</td><td>A per-pixel or per-tile fetcher</td></tr>
+    <tr><td>Game Boy Color</td><td>Out of scope</td><td>Double speed, VRAM and WRAM banks, colour palettes, HDMA</td></tr>
+  </tbody></table></div>
+</article>
+
+</main>
+</div>
+<script>
+{
+const R=[
+ ['v0-1','0.1','Baseline',15,24,'12/13',null],
+ ['v0-2','0.2','Memory map',16,28,'20',null],
+ ['v0-3','0.3','Mappers',17,53,'32',4.5],
+ ['v0-4','0.4','Speed 1',17,53,'32',9.6],
+ ['v0-5','0.5','Interrupts',17,62,'42',null],
+ ['v0-6','0.6','Graphics',17,66,'53',null],
+ ['v0-7','0.7','Timing',26,93,'65',8.8],
+ ['v0-8','0.8','CPU speed',26,93,'67',28.2],
+ ['v0-9','0.9','HALT skip',26,93,'72',36.1],
+ ['v0-9-1','0.9.1','Lazy sync',26,93,'75',43.7],
+ ['v0-9-2','0.9.2','Frame loop',26,93,'75',56.8]];
+const THEME={'0.1':'Baseline and audit','0.2':'Memory map','0.3':'Cartridge mappers','0.4':'Speed, part 1','0.5':'Interrupts and timer','0.6':'Graphics (PPU)','0.7':'Timing','0.8':'CPU speed','0.9':'Handlers, HALT skip','0.9.1':'Lazy sync','0.9.2':'Frame loop'};
+const maxM=111,maxF=60;
+document.getElementById('rl').innerHTML=R.map(r=>{
+  const m=r[4]/maxM*100, f=r[6]==null?0:Math.min(r[6],maxF)/maxF*100;
+  return `<a href="#${r[0]}"><span class="dot"></span><span class="lab">${r[1]}<small>${r[2]}</small></span>`+
+  `<span class="col"><em>${r[4]}</em><i style="height:${m*0.72}px;background:var(--green);--w:${m}%"></i></span>`+
+  `<span class="col"><em>${r[6]==null?'·':r[6]}</em><i style="height:${f*0.72}px;background:var(--navy);--w:${f}%"></i></span></a>`}).join('');
+document.getElementById('ovt').innerHTML=R.map(r=>`<tr><td><a href="#${r[0]}">${r[1]}</a></td><td>${THEME[r[1]]}</td><td class="n">${r[3]}</td><td class="n">${r[4]}</td><td class="n">${r[5]}</td><td class="n">${r[6]==null?'—':r[6]}</td></tr>`).join('');
+const GP=[['Kirby\'s Dream Land',38.7,51.4],['Tetris',40.9,51.0],['Pokémon Red',44.6,51.9],['Wario Land II',46.0,54.8],['Alleyway',49.5,54.3],['Pokémon Gold',50.5,53.5],['Zelda DX',53.2,65.9],['Super Mario Land 2',76.6,82.4],['Super Mario Land',81.5,83.1],['Dr. Mario',103.9,98.5],['Final Fantasy Legend',114.4,118.2]];
+document.getElementById('gp').innerHTML=GP.map(g=>`<tr><td>${g[0]}</td><td class="n">${g[1].toFixed(1)}</td><td class="n"><b>${g[2].toFixed(1)}</b></td></tr>`).join('');
+// Phone layout: bars become horizontal, using the stored percentage
+const narrow=matchMedia('(max-width:640px)');
+const fit=()=>document.querySelectorAll('.rl .col i').forEach(i=>{i.style.width=narrow.matches?`calc(${i.style.getPropertyValue('--w')} * .8)`:'min(26px,70%)'});
+narrow.addEventListener?narrow.addEventListener('change',fit):0;fit();
+// One entry at a time, routed by hash; without script every entry shows in order
+const arts=[...document.querySelectorAll('main article')];
+const ids=arts.map(a=>a.id);
+document.documentElement.classList.add('js');
+arts.forEach((a,i)=>{
+  const p=arts[i-1],n=arts[i+1];
+  const t=x=>x.querySelector('.ver').textContent.split('·')[0].trim()+' · '+x.querySelector('h1').textContent;
+  const d=document.createElement('div');d.className='pager';
+  d.innerHTML=(p?`<a href="#${p.id}">← ${t(p)}</a>`:'<span></span>')+(n?`<a href="#${n.id}">${t(n)} →</a>`:'');
+  a.appendChild(d)});
+const links=[...document.querySelectorAll('nav.idx a')];
+function show(){
+  const id=ids.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
+  arts.forEach(a=>a.hidden=a.id!==id);
+  links.forEach(l=>l.getAttribute('href')==='#'+id?l.setAttribute('aria-current','page'):l.removeAttribute('aria-current'));
+}
+addEventListener('hashchange',()=>{show();window.scrollTo(0,0)});show();
+}
+</script>
+</body>
+</html>
