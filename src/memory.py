@@ -20,6 +20,21 @@ from src.utils import validate_byte, validate_word, MemoryRanges
 from src.joypad import Joypad
 from src.gameboy_doctor import should_override_ly_register, get_overridden_ly_value  # Gameboy Doctor integration
 
+# Bits that always read as 1 for each I/O register 0xFF00-0xFF7F on DMG
+# (unused bits, write-only bits, and unmapped registers = 0xFF). Pan Docs, "Hardware Registers".
+_IO_READ_MASK = bytes([
+    # FF00 P1, SB, SC, --, DIV, TIMA, TMA, TAC, --..--, IF
+    0xC0, 0x00, 0x7E, 0xFF, 0x00, 0x00, 0x00, 0xF8, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xE0,
+    # FF10 sound channel 1, 2
+    0x80, 0x3F, 0x00, 0xFF, 0xBF, 0xFF, 0x3F, 0x00, 0xFF, 0xBF, 0x7F, 0xFF, 0x9F, 0xFF, 0xBF, 0xFF,
+    # FF20 sound channel 4, control; FF27-FF2F unused
+    0xFF, 0x00, 0x00, 0xBF, 0x00, 0x00, 0x70, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    # FF30 wave RAM
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    # FF40 LCDC, STAT, SCY, SCX, LY, LYC, DMA, BGP, OBP0, OBP1, WY, WX; FF4C-FF4F unmapped
+    0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+]) + bytes([0xFF] * 0x30)  # FF50-FF7F unmapped on DMG
+
 class Memory:
     """Game Boy Memory Management Unit"""
 
@@ -79,7 +94,8 @@ class Memory:
         # Check for OAM access restrictions during PPU modes (only for CPU reads, not PPU reads)
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
         # BUT only when LCD is enabled (LCDC bit 7)
-        if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFE9F:
+        # The unusable area 0xFEA0-0xFEFF follows the same lock.
+        if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFEFF:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
@@ -87,6 +103,10 @@ class Memory:
                     # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
                     if ppu_mode == 2 or ppu_mode == 3:
                         return 0xFF  # Return 0xFF for blocked reads
+
+        # Unusable area reads 0x00 on DMG when not locked.
+        if 0xFEA0 <= address <= 0xFEFF:
+            return 0x00
 
         # Check for VRAM access restrictions during PPU Mode 3 (only for CPU reads, not PPU reads)
         # VRAM (0x8000-0x9FFF) is blocked during Mode 3 (Pixel Transfer)
@@ -113,12 +133,28 @@ class Memory:
             mirror_address = address - 0x2000
             return int(self._data[mirror_address])
 
+        if 0xFF00 <= address <= 0xFF7F:
+            return self._data[address] | _IO_READ_MASK[address - 0xFF00]
+
         return int(self._data[address])
     
     def write_byte(self, address: int, value: int) -> None:
         """Write byte with serial port handling"""
         address = validate_word(address)
         value = validate_byte(value)
+
+        # ROM (0x0000-0x7FFF) is read-only. Games write here to talk to a
+        # cartridge mapper (MBC); with no mapper the write has no effect.
+        if address < 0x8000:
+            return
+
+        # Echo RAM (0xE000-0xFDFF) is the same memory as 0xC000-0xDDFF.
+        if 0xE000 <= address <= 0xFDFF:
+            address -= 0x2000
+
+        # 0xFEA0-0xFEFF is unusable; writes have no effect.
+        if 0xFEA0 <= address <= 0xFEFF:
+            return
 
         # Check for OAM write restrictions during PPU modes (only for CPU writes, not PPU writes)
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
@@ -209,6 +245,16 @@ class Memory:
             self._data[address] = value
             return
 
+        # Boot ROM disable (0xFF50): any write with bit 0 set unmaps the boot ROM.
+        # Must come before the unused-register range below, which contains 0xFF50.
+        if address == 0xFF50:
+            if value & 0x01 and self.boot_rom_enabled:
+                self.boot_rom_enabled = False
+                if self.cartridge_data:
+                    for i in range(min(0x100, len(self.cartridge_data))):
+                        self._data[i] = self.cartridge_data[i]
+            return
+
         # Unused I/O registers - ignore writes
         # These registers don't exist and writes should be ignored
         if address == 0xFF03 or (0xFF08 <= address <= 0xFF0E) or (0xFF4C <= address <= 0xFF7F):
@@ -235,18 +281,6 @@ class Memory:
             # Start DMA transfer from (value << 8) to OAM (0xFE00-0xFE9F)
             # Copies 0xA0 (160) bytes
             self._start_oam_dma(value)
-            self._data[address] = value
-            return
-
-        # Boot ROM disable (0xFF50)
-        if address == 0xFF50:
-            if value == 0x01:
-                # Disable boot ROM - map cartridge to 0x0000-0x00FF
-                self.boot_rom_enabled = False
-                # Copy cartridge low bytes to memory
-                if self.cartridge_data:
-                    for i in range(min(0x100, len(self.cartridge_data))):
-                        self._data[i] = self.cartridge_data[i]
             self._data[address] = value
             return
 
@@ -405,6 +439,8 @@ class Memory:
         self._data[0xFF4B] = 0x00  # WX
 
         # Initialize I/O Registers
+        self.joypad.write_p1(0x00)  # P1 = 0xCF: both button groups selected, nothing pressed
+        self._data[0xFF00] = 0x00
         self._data[0xFF01] = 0x00  # SB (Serial data)
         self._data[0xFF02] = 0x7E  # SC (Serial control)
         self._data[0xFF04] = 0xAB  # DIV (Divider, varies but use common value)

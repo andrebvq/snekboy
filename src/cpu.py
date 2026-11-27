@@ -12,6 +12,9 @@ from src.cpu_decoder import InstructionType, decode_instruction_params
 from src.ppu import PPU
 from src.gameboy_doctor import create_logger_if_enabled  # Gameboy Doctor integration
 
+# Opcodes with no instruction on the SM83; executing one locks up the CPU.
+ILLEGAL_OPCODES = frozenset({0xD3, 0xDB, 0xDD, 0xE3, 0xE4, 0xEB, 0xEC, 0xED, 0xF4, 0xFC, 0xFD})
+
 class ArithmeticTarget(Enum):
     A = auto()
     B = auto()
@@ -55,6 +58,7 @@ class CPU(InstructionImplementations):
         self.ime = False  # Interrupt Master Enable flag
         self._ei_pending = 0  # EI delay counter: counts down to 0 before enabling IME
         self._halt_bug_active = False  # HALT bug: skip next PC increment
+        self.locked = False  # Set by an illegal opcode; the CPU stops until reset
 
         # Gameboy Doctor: Create logger if enabled (None if disabled)
         self._doctor_logger = create_logger_if_enabled()
@@ -73,6 +77,11 @@ class CPU(InstructionImplementations):
 
         # Re-initialize CPU to post-boot state
         self._initialize_state()
+
+        # DIV is the top byte of the internal 16-bit counter, so seed the
+        # counter itself (DMG-ABC value after the boot ROM; DIV reads 0xAB).
+        self._system_counter = 0xABCC
+        self.memory._data[0xFF04] = self._system_counter >> 8
 
     def _initialize_state(self):
         """
@@ -468,8 +477,18 @@ class CPU(InstructionImplementations):
                     else:
                         self.memory.write_byte(0xFF05, tima)
 
+    def _idle_step(self) -> int:
+        """Advance timer and PPU by one M-cycle without executing anything."""
+        self._update_timers(1)
+        self.ppu.step(4)
+        self.total_cycles += 4
+        return 4
+
     def step(self) -> int:
         """Execute one instruction"""
+        if self.locked:
+            return self._idle_step()
+
         # If halted, update timers and PPU (so interrupt flags can be set)
         if self.halted:
             cycles = 4  # 4 T-cycles = 1 M-cycle
@@ -497,6 +516,13 @@ class CPU(InstructionImplementations):
 
         # FETCH
         opcode = self.fetch_byte()
+
+        # Illegal opcodes hang the real CPU: it stops executing for good,
+        # while the timer and PPU keep running.
+        if opcode in ILLEGAL_OPCODES:
+            self.locked = True
+            print(f"CPU locked: illegal opcode 0x{opcode:02X} at 0x{(self.registers._pc - 1) & 0xFFFF:04X}")
+            return self._idle_step()
 
         # DECODE
         instr_type, target, immediate, cycles = self.decode(opcode)
