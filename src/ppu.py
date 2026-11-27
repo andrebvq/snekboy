@@ -17,13 +17,12 @@ LCD Registers:
 - WX   (0xFF4B): Window X position
 
 PPU Modes (in STAT register):
-- Mode 0: HBlank (207 cycles) - CPU can access VRAM/OAM
-- Mode 1: VBlank (4560 cycles, 10 scanlines) - CPU can access VRAM/OAM
-- Mode 2: OAM Search (80 cycles) - CPU cannot access OAM
-- Mode 3: Pixel Transfer (172 cycles) - CPU cannot access VRAM/OAM
+- Mode 2: OAM Search (80 dots) - CPU cannot access OAM
+- Mode 3: Pixel Transfer (172 dots here; really 172-289) - CPU cannot access VRAM/OAM
+- Mode 0: HBlank (rest of the 456-dot line) - CPU can access VRAM/OAM
+- Mode 1: VBlank (lines 144-153) - CPU can access VRAM/OAM
 
-One scanline: Mode 2 (80) -> Mode 3 (172) -> Mode 0 (207) = 459 cycles
-One frame: 144 scanlines + 10 vblank lines = 154 scanlines = 70224 cycles
+One frame: 154 lines x 456 dots = 70224 T-cycles
 """
 
 # A tile row is two bytes: byte 1 holds bit 0 and byte 2 bit 1 of each pixel's
@@ -70,13 +69,22 @@ class PPU:
         # Screen buffer: 160x144 pixels, each pixel is 0-3 (2-bit color)
         self.screen_buffer = [[0 for _ in range(self.SCREEN_WIDTH)]
                               for _ in range(self.SCREEN_HEIGHT)]
+        # Colour numbers (before the palette) of the BG/window on the line being
+        # drawn; sprite-behind-background priority tests these, not shades.
+        self._bg_index = [0] * self.SCREEN_WIDTH
 
-        # Timing
-        self.cycle_counter = 0  # Cycles in current scanline
-        self.current_mode = self.MODE_OAM_SEARCH
-
-        # Initialize registers to power-on state
+        self._reset_state()
         self._init_registers()
+
+    def _reset_state(self):
+        self.ly = 0                 # internal line; the LY register differs on line 153
+        self.cycle_counter = 0      # dot within the current line (0-455)
+        self._phase = self.MODE_OAM_SEARCH        # where the PPU is in the line
+        self.current_mode = self.MODE_OAM_SEARCH  # what STAT reports (and what locks memory)
+        self._lcd_on = True
+        self._stat_line = False     # the four STAT sources ORed together
+        self._window_line = 0       # the window's own line counter
+        self._wy_hit = False        # LY has reached WY this frame
 
     def _init_registers(self):
         """Initialize LCD registers to power-on values"""
@@ -92,6 +100,106 @@ class PPU:
         self.memory._data[0xFF4A] = 0x00  # WY
         self.memory._data[0xFF4B] = 0x00  # WX
 
+    def post_boot_state(self):
+        """State when the boot ROM hands over: the end of line 153, in VBlank.
+
+        LY already reads 0 there (see the line-153 note in step), which is why
+        the boot ROM leaves LY=0 with STAT in mode 1.
+        """
+        self._reset_state()
+        self.ly = 153
+        self.cycle_counter = 400
+        self._phase = self.current_mode = self.MODE_VBLANK
+        d = self.memory._data
+        d[0xFF44] = 0
+        d[0xFF41] = (d[0xFF41] & 0xFC) | self.MODE_VBLANK
+        self._compare_lyc()
+        self._stat_line = self._stat_sources()
+
+    # --- LCD on/off ------------------------------------------------------------
+
+    def lcdc_written(self):
+        """Called after every LCDC write; handles the LCD being switched on or off."""
+        on = bool(self.memory._data[0xFF40] & 0x80)
+        if on != self._lcd_on:
+            if on:
+                self._lcd_switch_on()
+            else:
+                self._lcd_switch_off()
+
+    def _lcd_switch_off(self):
+        # The PPU stops: LY reads 0, STAT reports mode 0, no interrupts, and the
+        # screen goes blank. The LY=LYC flag keeps its last value.
+        d = self.memory._data
+        self._lcd_on = False
+        self.ly = 0
+        self.cycle_counter = 0
+        self._phase = self.current_mode = self.MODE_HBLANK
+        d[0xFF44] = 0
+        d[0xFF41] &= 0xFC
+        # The frozen LY=LYC flag keeps its STAT source high (or low) while off
+        self._stat_line = (d[0xFF41] & 0x44) == 0x44
+        for row in self.screen_buffer:
+            row[:] = [0] * self.SCREEN_WIDTH
+
+    def _lcd_switch_on(self):
+        # Restart at line 0, dot 0. The first line has no OAM-search period:
+        # STAT reports mode 0 until pixel transfer starts.
+        self._lcd_on = True
+        self.ly = 0
+        self.cycle_counter = 0
+        self._phase = self.MODE_OAM_SEARCH
+        self.current_mode = self.MODE_HBLANK
+        self._window_line = 0
+        self._wy_hit = self.memory._data[0xFF4A] == 0
+        self._compare_lyc()
+        self._update_stat()
+
+    # --- STAT ------------------------------------------------------------------
+
+    def _compare_lyc(self):
+        d = self.memory._data
+        if d[0xFF44] == d[0xFF45]:
+            d[0xFF41] |= 0x04
+        else:
+            d[0xFF41] &= ~0x04
+
+    def _stat_sources(self, oam_at_144=False):
+        stat = self.memory._data[0xFF41]
+        mode = stat & 0x03
+        return bool(
+            (stat & 0x44) == 0x44
+            or (mode == 0 and stat & 0x08)
+            or (mode == 1 and (stat & 0x10 or (oam_at_144 and stat & 0x20)))
+            or (mode == 2 and stat & 0x20)
+        )
+
+    def _update_stat(self, oam_at_144=False):
+        """Request the STAT interrupt only when the combined STAT line goes 0 -> 1."""
+        line = self._stat_sources(oam_at_144)
+        if line and not self._stat_line and self.interrupt_callback:
+            self.interrupt_callback(1)
+        self._stat_line = line
+
+    def stat_written(self):
+        if self._lcd_on:
+            self._update_stat()
+
+    def lyc_written(self):
+        # While the LCD is off the comparison is frozen.
+        if self._lcd_on:
+            self._compare_lyc()
+            self._update_stat()
+
+    def _set_mode(self, mode: int):
+        """Set PPU mode and update STAT register"""
+        self._phase = self.current_mode = mode
+        d = self.memory._data
+        d[0xFF41] = (d[0xFF41] & 0xFC) | mode
+        self._update_stat()
+
+    # --- timing ----------------------------------------------------------------
+
     def step(self, cycles: int):
         """
         Update PPU for the given number of CPU cycles
@@ -99,149 +207,69 @@ class PPU:
         Args:
             cycles: Number of T-cycles that have elapsed
         """
-        # Check if LCD is enabled
-        lcdc = self.memory._data[0xFF40]
-        ly = self.memory._data[0xFF44]
-
-        if not (lcdc & 0x80):  # Bit 7 = LCD enable
-            # LCD is off - advance cycles and LY to simulate timing, but no rendering
-            # This is critical: real hardware continues LY counter even when LCD is off
-            # Games rely on this to poll LY and detect VBlank timing
-            self.cycle_counter += cycles
-
-            while self.cycle_counter >= self.SCANLINE_CYCLES:
-                self.cycle_counter -= self.SCANLINE_CYCLES
-                ly = (ly + 1) % 154  # Wrap 0-153
-                self.memory._data[0xFF44] = ly
-                self._check_lyc_coincidence()  # Still check LYC coincidence
-
-                # Trigger VBlank interrupt when entering VBlank region, even with LCD off
-                # This is critical for games that turn off LCD and rely on VBlank for timing
-                if ly == 144:
-                    # Enter VBlank mode
-                    if self.current_mode != self.MODE_VBLANK:
-                        self._set_mode(self.MODE_VBLANK)
-                    # Trigger VBlank interrupt
-                    if self.interrupt_callback:
-                        self.interrupt_callback(0)  # VBlank interrupt (bit 0)
-
+        d = self.memory._data
+        if not (d[0xFF40] & 0x80):
+            if self._lcd_on:
+                self._lcd_switch_off()
             return
+        if not self._lcd_on:
+            self._lcd_switch_on()
 
         self.cycle_counter += cycles
+        while True:
+            dot = self.cycle_counter
+            phase = self._phase
+            if phase == self.MODE_OAM_SEARCH:
+                if dot < 80:
+                    return
+                self._set_mode(self.MODE_PIXEL_TRANSFER)
+                self._render_scanline(self.ly)
+            elif phase == self.MODE_PIXEL_TRANSFER:
+                if dot < 252:
+                    return
+                self._set_mode(self.MODE_HBLANK)
+            elif phase == self.MODE_HBLANK:
+                if dot < 456:
+                    return
+                self._next_line()
+            else:  # VBlank
+                if self.ly == 153 and dot >= 4 and d[0xFF44] != 0:
+                    # Line 153: LY reads 153 only for the first few dots, then 0
+                    d[0xFF44] = 0
+                    self._compare_lyc()
+                    self._update_stat()
+                if dot < 456:
+                    return
+                self._next_line()
 
-        # Check which mode we're in based on current scanline and cycle count
-        if ly >= 144:
-            # VBlank period (lines 144-153)
-            if self.current_mode != self.MODE_VBLANK:
-                self._enter_vblank()
+    def _next_line(self):
+        d = self.memory._data
+        self.cycle_counter -= 456
+        ly = self.ly + 1
+        if ly == 154:
+            ly = 0
+        self.ly = ly
+        d[0xFF44] = ly
+        self._compare_lyc()
 
-            # Check if we should move to next scanline
-            if self.cycle_counter >= self.SCANLINE_CYCLES:
-                self.cycle_counter -= self.SCANLINE_CYCLES
-                ly += 1
-
-                if ly > 153:
-                    # End of frame, restart
-                    ly = 0
-                    self._enter_oam_search()
-
-                self.memory._data[0xFF44] = ly
-                self._check_lyc_coincidence()
-
+        if ly < 144:
+            if ly == d[0xFF4A]:
+                self._wy_hit = True
+            self._set_mode(self.MODE_OAM_SEARCH)
+        elif ly == 144:
+            self._phase = self.current_mode = self.MODE_VBLANK
+            d[0xFF41] = (d[0xFF41] & 0xFC) | self.MODE_VBLANK
+            if self.interrupt_callback:
+                self.interrupt_callback(0)
+            # On DMG the OAM STAT source also fires as line 144 starts.
+            self._update_stat(oam_at_144=True)
+            self._update_stat()
+            self._window_line = 0
+            self._wy_hit = False
         else:
-            # Visible scanlines (0-143)
-            if self.cycle_counter <= self.MODE_2_CYCLES:
-                # Mode 2: OAM Search
-                if self.current_mode != self.MODE_OAM_SEARCH:
-                    self._enter_oam_search()
+            self._update_stat()
 
-            elif self.cycle_counter <= (self.MODE_2_CYCLES + self.MODE_3_CYCLES):
-                # Mode 3: Pixel Transfer
-                if self.current_mode != self.MODE_PIXEL_TRANSFER:
-                    # Entering mode 3 - render scanline once
-                    self._set_mode(self.MODE_PIXEL_TRANSFER)
-                    self._render_scanline(ly)
-
-            else:
-                # Mode 0: HBlank
-                if self.current_mode != self.MODE_HBLANK:
-                    self._enter_hblank()
-
-                # Check if we should move to next scanline
-                if self.cycle_counter >= self.SCANLINE_CYCLES:
-                    self.cycle_counter -= self.SCANLINE_CYCLES
-                    ly += 1
-                    self.memory._data[0xFF44] = ly
-                    self._check_lyc_coincidence()
-
-                    if ly == 144:
-                        # Entering VBlank
-                        self._enter_vblank()
-                    else:
-                        # Next scanline starts with OAM search
-                        self._enter_oam_search()
-
-    def _set_mode(self, mode: int):
-        """Set PPU mode and update STAT register"""
-        self.current_mode = mode
-        stat = self.memory._data[0xFF41]
-        # Clear lower 2 bits and set new mode
-        stat = (stat & 0xFC) | mode
-        self.memory._data[0xFF41] = stat
-
-    def _enter_vblank(self):
-        """Enter VBlank mode and request VBlank interrupt"""
-        self._set_mode(self.MODE_VBLANK)
-
-        # Request VBlank interrupt (bit 0 of IF)
-        if self.interrupt_callback:
-            self.interrupt_callback(0)
-
-        # Also check for STAT interrupt (bit 4 of STAT = VBlank interrupt enable)
-        stat = self.memory._data[0xFF41]
-        if stat & 0x10:  # VBlank interrupt enabled
-            if self.interrupt_callback:
-                self.interrupt_callback(1)  # STAT interrupt
-
-    def _enter_hblank(self):
-        """Enter HBlank mode and potentially request STAT interrupt"""
-        self._set_mode(self.MODE_HBLANK)
-
-        # Check for HBlank STAT interrupt (bit 3 of STAT)
-        stat = self.memory._data[0xFF41]
-        if stat & 0x08:  # HBlank interrupt enabled
-            if self.interrupt_callback:
-                self.interrupt_callback(1)  # STAT interrupt
-
-    def _enter_oam_search(self):
-        """Enter OAM Search mode and potentially request STAT interrupt"""
-        self._set_mode(self.MODE_OAM_SEARCH)
-
-        # Check for OAM Search STAT interrupt (bit 5 of STAT)
-        stat = self.memory._data[0xFF41]
-        if stat & 0x20:  # OAM interrupt enabled
-            if self.interrupt_callback:
-                self.interrupt_callback(1)  # STAT interrupt
-
-    def _check_lyc_coincidence(self):
-        """Check if LY == LYC and set coincidence flag"""
-        ly = self.memory._data[0xFF44]
-        lyc = self.memory._data[0xFF45]
-        stat = self.memory._data[0xFF41]
-
-        if ly == lyc:
-            # Set coincidence flag (bit 2)
-            stat |= 0x04
-
-            # Check if LYC interrupt is enabled (bit 6)
-            if stat & 0x40:
-                if self.interrupt_callback:
-                    self.interrupt_callback(1)  # STAT interrupt
-        else:
-            # Clear coincidence flag
-            stat &= ~0x04
-
-        self.memory._data[0xFF41] = stat
+    # --- rendering -------------------------------------------------------------
 
     def _render_scanline(self, ly: int):
         """
@@ -255,8 +283,8 @@ class PPU:
         # Render background first
         self._render_background_scanline(ly, lcdc)
 
-        # Render window on top of background (if enabled)
-        if lcdc & 0x20:  # Bit 5 = window enable
+        # Window on top of background. On DMG, LCDC bit 0 off blanks both.
+        if lcdc & 0x21 == 0x21:
             self._render_window_scanline(ly, lcdc)
 
         # Render sprites on top (if enabled)
@@ -295,6 +323,7 @@ class PPU:
         if not (lcdc & 0x01):
             # Background disabled - render blank line
             row[:] = [0] * self.SCREEN_WIDTH
+            self._bg_index = [0] * self.SCREEN_WIDTH
             return
 
         d = self.memory._data
@@ -315,176 +344,108 @@ class PPU:
         # 21 tiles cover 160 pixels at any fine X scroll; the map wraps every 32 tiles
         pixels = self._tile_line_pixels(d, map_row, scx >> 3, 21, signed, y_pos & 7)
         fine_x = scx & 7
-        row[:] = [palette[c] for c in pixels[fine_x:fine_x + self.SCREEN_WIDTH]]
+        index = pixels[fine_x:fine_x + self.SCREEN_WIDTH]
+        self._bg_index = index
+        row[:] = [palette[c] for c in index]
 
     def _render_window_scanline(self, ly: int, lcdc: int):
         """
         Render window for a single scanline
 
         The window is an alternative background area that is displayed on top of the background.
-        It has no transparency - it always covers the background.
+        It has no transparency - it always covers the background. It starts once LY has
+        reached WY in this frame, and keeps its own line counter, which only advances on
+        lines where the window was actually drawn.
 
         Args:
             ly: Current scanline number (0-143)
             lcdc: LCD control register value
         """
         d = self.memory._data
-        wy = d[0xFF4A]  # Window Y position
-        wx = d[0xFF4B]  # Window X position minus 7
-
-        # Check if window is visible on this scanline
-        if ly < wy:
-            return  # Window hasn't started yet
+        wx = d[0xFF4B]  # Window X position plus 7
+        if not self._wy_hit or wx > 166:
+            return
 
         # Window tile map: bit 6 of LCDC (0 = 0x9800, 1 = 0x9C00)
         tile_map_base = 0x9C00 if (lcdc & 0x40) else 0x9800
         # Window uses same tile data as background (bit 4 of LCDC)
         signed = not (lcdc & 0x10)
 
-        # Window line: which line of the window we're rendering
-        window_y = ly - wy
+        window_y = self._window_line
+        self._window_line += 1
 
-        # WX=7 means window starts at screen X=0
-        window_x_start = max(0, wx - 7)
-        width = self.SCREEN_WIDTH - window_x_start
-        if width <= 0:
-            return
+        # WX=7 puts the window at screen X=0; below 7 it is shifted left
+        x_start = max(0, wx - 7)
+        skip = x_start - (wx - 7)
+        width = self.SCREEN_WIDTH - x_start
 
         bgp = d[0xFF47]  # window uses the background palette
         palette = [(bgp >> (i * 2)) & 0x03 for i in range(4)]
         map_row = tile_map_base + (window_y >> 3) * 32
-        pixels = self._tile_line_pixels(d, map_row, 0, (width + 7) >> 3, signed, window_y & 7)
+        pixels = self._tile_line_pixels(d, map_row, 0, (skip + width + 7) >> 3, signed, window_y & 7)
+        pixels = pixels[skip:skip + width]
 
         # Window overwrites background
-        self.screen_buffer[ly][window_x_start:] = [palette[c] for c in pixels[:width]]
+        self.screen_buffer[ly][x_start:] = [palette[c] for c in pixels]
+        self._bg_index[x_start:] = pixels
 
     def _render_sprites_scanline(self, ly: int, lcdc: int):
         """
         Render sprites for a single scanline
 
+        Up to 10 sprites per line, the first ones found in OAM. Where sprites
+        overlap, the one with the smaller X wins (then the lower OAM index), and
+        it wins even when its pixel is then hidden behind the background.
+
         Args:
             ly: Current scanline number (0-143)
             lcdc: LCD control register value
         """
-        # Sprite size: bit 2 of LCDC (0 = 8x8, 1 = 8x16)
-        sprite_height = 16 if (lcdc & 0x04) else 8
-
-        # OAM is at 0xFE00-0xFE9F (160 bytes = 40 sprites, 4 bytes each)
-        # Sprite attributes:
-        # Byte 0: Y position (minus 16)
-        # Byte 1: X position (minus 8)
-        # Byte 2: Tile number
-        # Byte 3: Flags (priority, Y flip, X flip, palette)
-
-        sprites_on_line = []
+        height = 16 if (lcdc & 0x04) else 8
         d = self.memory._data  # the PPU reads OAM and VRAM directly
 
-        # Scan all 40 sprites
-        for sprite_index in range(40):
-            oam_addr = 0xFE00 + (sprite_index * 4)
+        # OAM: 40 sprites x 4 bytes (Y+16, X+8, tile, flags)
+        found = []
+        for addr in range(0xFE00, 0xFEA0, 4):
+            top = d[addr] - 16
+            if top <= ly < top + height:
+                found.append((d[addr + 1], addr))
+                if len(found) == 10:
+                    break
+        if not found:
+            return
+        found.sort()        # smaller X first, then lower OAM address
 
-            y_pos = d[oam_addr]
-            x_pos = d[oam_addr + 1]
-            tile_num = d[oam_addr + 2]
-            flags = d[oam_addr + 3]
+        row = self.screen_buffer[ly]
+        bg = self._bg_index
+        taken = [False] * self.SCREEN_WIDTH
+        for x_raw, addr in found:
+            x0 = x_raw - 8
+            if x0 <= -8 or x0 >= self.SCREEN_WIDTH:
+                continue
+            tile = d[addr + 2]
+            flags = d[addr + 3]
+            line = ly - (d[addr] - 16)
+            if flags & 0x40:                      # Y flip
+                line = height - 1 - line
+            if height == 16:                      # bit 0 of the tile picks the half
+                tile = (tile & 0xFE) | (line >> 3)
+                line &= 7
+            tile_addr = 0x8000 + tile * 16 + line * 2
+            pixels = TILE_ROW[(d[tile_addr] << 8) | d[tile_addr + 1]]
+            if flags & 0x20:                      # X flip
+                pixels = pixels[::-1]
+            palette = d[0xFF49] if flags & 0x10 else d[0xFF48]
+            behind = flags & 0x80                 # behind BG colours 1-3
 
-            # Adjust positions (hardware stores Y-16, X-8)
-            y_pos = y_pos - 16
-            x_pos = x_pos - 8
-
-            # Check if sprite is on this scanline
-            if ly >= y_pos and ly < y_pos + sprite_height:
-                sprites_on_line.append({
-                    'x': x_pos,
-                    'y': y_pos,
-                    'tile': tile_num,
-                    'flags': flags,
-                    'index': sprite_index
-                })
-
-        # Limit to 10 sprites per scanline (hardware limitation)
-        sprites_on_line = sprites_on_line[:10]
-
-        # Sort sprites by priority (lower X = higher priority, then lower OAM index = higher priority)
-        # We render in reverse order, so sort descending (highest priority last = rendered on top)
-        sprites_on_line.sort(key=lambda s: (-s['x'], -s['index']))
-
-        # Render sprites (reversed order means lowest X / lowest index renders last = on top)
-        for sprite in sprites_on_line:
-            x_pos = sprite['x']
-            y_pos = sprite['y']
-            tile_num = sprite['tile']
-            flags = sprite['flags']
-
-            # Parse flags
-            priority = (flags >> 7) & 1  # 0 = sprite above BG, 1 = sprite behind BG colors 1-3
-            y_flip = (flags >> 6) & 1
-            x_flip = (flags >> 5) & 1
-            palette_num = (flags >> 4) & 1  # 0 = OBP0, 1 = OBP1
-
-            # Get palette
-            palette_addr = 0xFF48 if palette_num == 0 else 0xFF49
-            palette = d[palette_addr]
-
-            # Calculate which line of the sprite we're rendering
-            sprite_line = ly - y_pos
-
-            # Handle Y flip
-            if y_flip:
-                sprite_line = (sprite_height - 1) - sprite_line
-
-            # For 8x16 sprites, tile_num uses bit 0 to select top/bottom tile
-            if sprite_height == 16:
-                if sprite_line >= 8:
-                    tile_num = (tile_num & 0xFE) | 0x01  # Bottom tile
-                    sprite_line -= 8
-                else:
-                    tile_num = tile_num & 0xFE  # Top tile
-
-            # Sprites always use 0x8000 addressing mode
-            tile_addr = 0x8000 + (tile_num * 16) + (sprite_line * 2)
-
-            # Read tile data
-            byte1 = d[tile_addr]
-            byte2 = d[tile_addr + 1]
-
-            # Render each pixel of the sprite
-            for pixel_x in range(8):
-                screen_x = x_pos + pixel_x
-
-                # Skip if off-screen
-                if screen_x < 0 or screen_x >= self.SCREEN_WIDTH:
-                    continue
-
-                # Get bit position (handle X flip)
-                if x_flip:
-                    bit_pos = pixel_x
-                else:
-                    bit_pos = 7 - pixel_x
-
-                # Get color index
-                color_bit_low = (byte1 >> bit_pos) & 1
-                color_bit_high = (byte2 >> bit_pos) & 1
-                color_index = (color_bit_high << 1) | color_bit_low
-
-                # Color 0 is transparent for sprites
-                if color_index == 0:
-                    continue
-
-                # Get background color at this position
-                bg_color_index = self.screen_buffer[ly][screen_x]
-
-                # Check priority
-                if priority == 1:
-                    # Sprite is behind background colors 1-3
-                    if bg_color_index != 0:
-                        continue  # Don't draw sprite pixel
-
-                # Apply sprite palette
-                color = (palette >> (color_index * 2)) & 0x03
-
-                # Draw sprite pixel
-                self.screen_buffer[ly][screen_x] = color
+            for k in range(8):
+                x = x0 + k
+                if 0 <= x < self.SCREEN_WIDTH and not taken[x]:
+                    c = pixels[k]
+                    if c:                         # colour 0 is transparent
+                        taken[x] = True
+                        if not (behind and bg[x]):
+                            row[x] = (palette >> (c * 2)) & 0x03
 
     def get_screen_buffer(self):
         """
@@ -497,11 +458,9 @@ class PPU:
 
     def reset(self):
         """Reset PPU to power-on state"""
-        self.cycle_counter = 0
-        self.current_mode = self.MODE_OAM_SEARCH
+        self._reset_state()
         self._init_registers()
 
         # Clear screen buffer
-        for y in range(self.SCREEN_HEIGHT):
-            for x in range(self.SCREEN_WIDTH):
-                self.screen_buffer[y][x] = 0
+        for row in self.screen_buffer:
+            row[:] = [0] * self.SCREEN_WIDTH
