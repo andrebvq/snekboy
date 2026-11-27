@@ -116,9 +116,7 @@ class Memory:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
-                    ppu_mode = self._cpu.ppu.current_mode
-                    # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
-                    if ppu_mode == 2 or ppu_mode == 3:
+                    if self._cpu.ppu.oam_locked:
                         return 0xFF  # Return 0xFF for blocked reads
 
         # Unusable area reads 0x00 on DMG when not locked.
@@ -132,8 +130,7 @@ class Memory:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
-                    ppu_mode = self._cpu.ppu.current_mode
-                    if ppu_mode == 3:  # Mode 3 = Pixel Transfer
+                    if self._cpu.ppu.vram_locked:
                         return 0xFF  # Return 0xFF for blocked reads
 
         # P1/JOYP register (0xFF00) - Joypad
@@ -188,9 +185,7 @@ class Memory:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
-                    ppu_mode = self._cpu.ppu.current_mode
-                    # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
-                    if ppu_mode == 2 or ppu_mode == 3:
+                    if self._cpu.ppu.oam_write_locked:
                         return  # Ignore write
 
         # Check for VRAM write restrictions during PPU Mode 3 (only for CPU writes, not PPU writes)
@@ -200,8 +195,7 @@ class Memory:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
-                    ppu_mode = self._cpu.ppu.current_mode
-                    if ppu_mode == 3:  # Mode 3 = Pixel Transfer
+                    if self._cpu.ppu.vram_write_locked:
                         return  # Ignore write
 
         # P1/JOYP register (0xFF00) - Joypad
