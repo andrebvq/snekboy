@@ -120,6 +120,11 @@ class Memory:
         address = validate_word(address)
         value = validate_byte(value)
 
+        # ROM (0x0000-0x7FFF) is read-only. Games write here to talk to a
+        # cartridge mapper (MBC); with no mapper the write has no effect.
+        if address < 0x8000:
+            return
+
         # Check for OAM write restrictions during PPU modes (only for CPU writes, not PPU writes)
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
         # BUT only when LCD is enabled (LCDC bit 7)

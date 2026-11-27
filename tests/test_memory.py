@@ -4,14 +4,14 @@ def test_memory_read_write():
     mem = Memory()
     
     # Test byte operations
-    mem.write_byte(0x1234, 0xAB)
-    assert mem.read_byte(0x1234) == 0xAB
-    
+    mem.write_byte(0xC234, 0xAB)
+    assert mem.read_byte(0xC234) == 0xAB
+
     # Test word operations (little-endian)
-    mem.write_word(0x5000, 0x1234)
-    assert mem.read_byte(0x5000) == 0x34  # Low byte
-    assert mem.read_byte(0x5001) == 0x12  # High byte
-    assert mem.read_word(0x5000) == 0x1234
+    mem.write_word(0xD000, 0x1234)
+    assert mem.read_byte(0xD000) == 0x34  # Low byte
+    assert mem.read_byte(0xD001) == 0x12  # High byte
+    assert mem.read_word(0xD000) == 0x1234
     
     print("✓ Memory read/write test passed")
 
