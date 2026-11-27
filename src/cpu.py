@@ -5,6 +5,7 @@ from src.opcodes import OPCODES, CB_OPCODES
 from src.instructions_impl import InstructionImplementations
 from src.cpu_decoder import InstructionType, decode_instruction_params, decode_cb_instruction
 from src.ppu import PPU
+from src import fast_ops
 from src.gameboy_doctor import create_logger_if_enabled  # Gameboy Doctor integration
 
 # Opcodes with no instruction on the SM83; executing one locks up the CPU.
@@ -658,9 +659,19 @@ class CPU(InstructionImplementations):
             else:
                 cycles = 8
             cb_ops[cb] = (fn, target, imm, cycles)
+        self._op_types = types
+
+        # Swap in the dedicated handlers (src/fast_ops.py) for the frequent
+        # opcodes. Operand kind, slot and cycles stay as decoded above; the
+        # generic tables are kept so tests can compare the two.
+        self._generic_ops, self._generic_cb_ops = list(ops), list(cb_ops)
+        fast, fast_cb = fast_ops.build(self)
+        for opcode, fn in fast.items():
+            ops[opcode] = (fn,) + ops[opcode][1:]
+        for cb, fn in fast_cb.items():
+            cb_ops[cb] = (fn,) + cb_ops[cb][1:]
         self._ops = ops
         self._cb_ops = cb_ops
-        self._op_types = types
 
     def execute_instruction(self, instr_type, target, immediate):
         """Run one decoded instruction (kept for tools and tests). Returns
