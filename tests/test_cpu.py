@@ -100,6 +100,20 @@ def test_illegal_opcode_locks_cpu():
         assert cpu.registers._pc == pc
         assert cpu.total_cycles == cycles + 20
 
+def test_stop_waits_for_button_and_resets_div():
+    cpu = CPU(_mem_with_program([0x10, 0x00, 0x00]))   # STOP; NOP
+    cpu.simulate_boot()
+    cpu.memory.write_byte(0xFF00, 0x10)   # select buttons (A/B/Select/Start)
+    cpu.step()
+    assert cpu.stopped
+    assert cpu.memory.read_byte(0xFF04) == 0
+    for _ in range(100):
+        cpu.step()
+    assert cpu.stopped and cpu.memory.read_byte(0xFF04) == 0   # timer frozen
+    cpu.memory.joypad.press_button("start")
+    cpu.step()
+    assert not cpu.stopped
+
 
 if __name__ == "__main__":
     test_nop_instruction()

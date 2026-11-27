@@ -59,6 +59,7 @@ class CPU(InstructionImplementations):
         self._ei_pending = 0  # EI delay counter: counts down to 0 before enabling IME
         self._halt_bug_active = False  # HALT bug: skip next PC increment
         self.locked = False  # Set by an illegal opcode; the CPU stops until reset
+        self.stopped = False  # STOP mode: CPU and timer frozen until a button is pressed
 
         # Gameboy Doctor: Create logger if enabled (None if disabled)
         self._doctor_logger = create_logger_if_enabled()
@@ -489,6 +490,15 @@ class CPU(InstructionImplementations):
         if self.locked:
             return self._idle_step()
 
+        if self.stopped:
+            # A pressed button in the selected P1 group pulls a line low and wakes the CPU
+            if self.memory.joypad.read_p1() & 0x0F != 0x0F:
+                self.stopped = False
+            else:
+                self.ppu.step(4)
+                self.total_cycles += 4
+                return 4
+
         # If halted, update timers and PPU (so interrupt flags can be set)
         if self.halted:
             cycles = 4  # 4 T-cycles = 1 M-cycle
@@ -717,20 +727,12 @@ class CPU(InstructionImplementations):
                 self.halted = True
 
         elif instr_type == InstructionType.STOP:
-            # Check if KEY1 (0xFF4D) bit 0 is set for CGB speed switching
-            key1 = self.memory.read_byte(0xFF4D)
-            if key1 & 0x01:  # Bit 0 set - speed switch requested
-                # Toggle bit 7 (current speed) and clear bit 0 (armed flag)
-                current_speed = (key1 >> 7) & 0x01
-                new_speed = 1 - current_speed
-                new_key1 = (new_speed << 7)  # Set new speed, clear armed flag
-                self.memory.write_byte(0xFF4D, new_key1)
-                # Don't halt - just continue execution after speed switch
-            else:
-                # Normal STOP behavior - halt until button press
-                # For simplicity, we'll just halt like HALT instruction
-                # (Real GB would wake on joypad P10-P13, but tests don't use this)
-                self.halted = True
+            # DMG STOP: reset DIV and freeze CPU and timer until a button is pressed.
+            # (KEY1 speed switching exists only on Game Boy Color.)
+            self._system_counter = 0
+            self.memory._data[0xFF04] = 0
+            if self.memory.joypad.read_p1() & 0x0F == 0x0F:
+                self.stopped = True
 
         elif instr_type == InstructionType.ADD:
             self._execute_add(target, immediate)
