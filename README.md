@@ -75,7 +75,6 @@ snekboy/
 │   ├── memory.py               # Memory management and I/O
 │   ├── ppu.py                  # Graphics rendering
 │   ├── joypad.py               # Input handling
-│   ├── timer.py                # Timer system
 │   ├── tracer.py               # Execution tracing
 │   ├── display.py              # Display output
 │   ├── emulator.py             # Main emulator loop
