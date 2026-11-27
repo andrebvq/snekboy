@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 — Interrupts and timer
+
+- `DI` right after `EI` no longer lets an interrupt through.
+- A second `EI` no longer restarts the one-instruction delay.
+- Interrupt dispatch is decided after pushing PC's high byte; a push that
+  overwrites IE can cancel it, as on hardware.
+- `EI; HALT` with an interrupt waiting returns to the `HALT` instead of
+  corrupting the handler's first instruction.
+- Writing DIV can tick TIMA (falling edge of the selected counter bit).
+- During the cycle TIMA reloads from TMA, TIMA writes are ignored and TMA
+  writes also reach TIMA.
+- Removed unused `src/timer.py`.
+
+mooneye 53 -> 62 passing. Blargg and game output unchanged.
+
 ## 0.4.0 — Speed
 
 - Graphics decode each 8-pixel tile row with one table lookup and read video memory directly.

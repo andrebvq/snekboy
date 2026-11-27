@@ -275,9 +275,9 @@ MIT License - See LICENSE file for details.
 
 ## Development Status
 
-Current version: 0.4.0 (Pre-Alpha). See `CHANGELOG.md`.
+Current version: 0.5.0 (Pre-Alpha). See `CHANGELOG.md`.
 
-- Passes: Blargg cpu_instrs, instr_timing, halt_bug; mooneye MBC1/MBC2/MBC5 tests.
+- Passes: Blargg cpu_instrs, instr_timing, halt_bug; mooneye MBC1/MBC2/MBC5, timer and EI/DI tests.
 - Cartridges: ROM only, MBC1, MBC2, MBC3 (with clock), MBC5. Battery saves go to `<rom>.sav`.
 - Not yet implemented: audio (APU), MBC1 multicart.
 - Known gaps: runs at about 15-25% of full speed; memory timing is per instruction, not per memory access; window rendering and LCD on/off behaviour are incomplete.
