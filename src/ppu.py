@@ -26,6 +26,15 @@ One scanline: Mode 2 (80) -> Mode 3 (172) -> Mode 0 (207) = 459 cycles
 One frame: 144 scanlines + 10 vblank lines = 154 scanlines = 70224 cycles
 """
 
+# A tile row is two bytes: byte 1 holds bit 0 and byte 2 bit 1 of each pixel's
+# colour number, leftmost pixel in bit 7. TILE_ROW[(byte1 << 8) | byte2] gives
+# the 8 colour numbers (0-3) of that row, so rendering needs one lookup per tile.
+TILE_ROW = tuple(
+    tuple((((b2 >> bit) & 1) << 1) | ((b1 >> bit) & 1) for bit in range(7, -1, -1))
+    for b1 in range(256) for b2 in range(256)
+)
+
+
 class PPU:
     """Game Boy Picture Processing Unit"""
 
@@ -91,8 +100,8 @@ class PPU:
             cycles: Number of T-cycles that have elapsed
         """
         # Check if LCD is enabled
-        lcdc = self.memory.read_byte(0xFF40)
-        ly = self.memory.read_byte(0xFF44)
+        lcdc = self.memory._data[0xFF40]
+        ly = self.memory._data[0xFF44]
 
         if not (lcdc & 0x80):  # Bit 7 = LCD enable
             # LCD is off - advance cycles and LY to simulate timing, but no rendering
@@ -175,7 +184,7 @@ class PPU:
     def _set_mode(self, mode: int):
         """Set PPU mode and update STAT register"""
         self.current_mode = mode
-        stat = self.memory.read_byte(0xFF41)
+        stat = self.memory._data[0xFF41]
         # Clear lower 2 bits and set new mode
         stat = (stat & 0xFC) | mode
         self.memory._data[0xFF41] = stat
@@ -189,7 +198,7 @@ class PPU:
             self.interrupt_callback(0)
 
         # Also check for STAT interrupt (bit 4 of STAT = VBlank interrupt enable)
-        stat = self.memory.read_byte(0xFF41)
+        stat = self.memory._data[0xFF41]
         if stat & 0x10:  # VBlank interrupt enabled
             if self.interrupt_callback:
                 self.interrupt_callback(1)  # STAT interrupt
@@ -199,7 +208,7 @@ class PPU:
         self._set_mode(self.MODE_HBLANK)
 
         # Check for HBlank STAT interrupt (bit 3 of STAT)
-        stat = self.memory.read_byte(0xFF41)
+        stat = self.memory._data[0xFF41]
         if stat & 0x08:  # HBlank interrupt enabled
             if self.interrupt_callback:
                 self.interrupt_callback(1)  # STAT interrupt
@@ -209,16 +218,16 @@ class PPU:
         self._set_mode(self.MODE_OAM_SEARCH)
 
         # Check for OAM Search STAT interrupt (bit 5 of STAT)
-        stat = self.memory.read_byte(0xFF41)
+        stat = self.memory._data[0xFF41]
         if stat & 0x20:  # OAM interrupt enabled
             if self.interrupt_callback:
                 self.interrupt_callback(1)  # STAT interrupt
 
     def _check_lyc_coincidence(self):
         """Check if LY == LYC and set coincidence flag"""
-        ly = self.memory.read_byte(0xFF44)
-        lyc = self.memory.read_byte(0xFF45)
-        stat = self.memory.read_byte(0xFF41)
+        ly = self.memory._data[0xFF44]
+        lyc = self.memory._data[0xFF45]
+        stat = self.memory._data[0xFF41]
 
         if ly == lyc:
             # Set coincidence flag (bit 2)
@@ -241,7 +250,7 @@ class PPU:
         Args:
             ly: Current scanline number (0-143)
         """
-        lcdc = self.memory.read_byte(0xFF40)
+        lcdc = self.memory._data[0xFF40]
 
         # Render background first
         self._render_background_scanline(ly, lcdc)
@@ -254,6 +263,24 @@ class PPU:
         if lcdc & 0x02:  # Bit 1 = sprite enable
             self._render_sprites_scanline(ly, lcdc)
 
+    def _tile_line_pixels(self, d, map_row: int, first_col: int, tiles: int,
+                          signed: bool, tile_line: int) -> list:
+        """Colour numbers for `tiles` consecutive tiles of one tile-map row.
+
+        The PPU reads VRAM directly: CPU access rules don't apply to it.
+        """
+        pixels = []
+        line_offset = tile_line * 2
+        for i in range(tiles):
+            tile_num = d[map_row + ((first_col + i) & 31)]
+            if signed:
+                # Signed tile numbers (-128..127) relative to 0x9000
+                addr = 0x9000 + ((tile_num ^ 0x80) - 0x80) * 16 + line_offset
+            else:
+                addr = 0x8000 + tile_num * 16 + line_offset
+            pixels.extend(TILE_ROW[(d[addr] << 8) | d[addr + 1]])
+        return pixels
+
     def _render_background_scanline(self, ly: int, lcdc: int):
         """
         Render background for a single scanline
@@ -262,81 +289,33 @@ class PPU:
             ly: Current scanline number (0-143)
             lcdc: LCD control register value
         """
+        row = self.screen_buffer[ly]
+
         # Check if background is enabled (bit 0)
         if not (lcdc & 0x01):
             # Background disabled - render blank line
-            for x in range(self.SCREEN_WIDTH):
-                self.screen_buffer[ly][x] = 0
+            row[:] = [0] * self.SCREEN_WIDTH
             return
 
-        # Get scroll positions
-        scy = self.memory.read_byte(0xFF42)
-        scx = self.memory.read_byte(0xFF43)
+        d = self.memory._data
+        scy = d[0xFF42]
+        scx = d[0xFF43]
+        bgp = d[0xFF47]
+        palette = [(bgp >> (i * 2)) & 0x03 for i in range(4)]
 
-        # Background tile map: bit 3 of LCDC
-        # 0 = 0x9800-0x9BFF, 1 = 0x9C00-0x9FFF
+        # Background tile map: bit 3 of LCDC (0 = 0x9800, 1 = 0x9C00)
         tile_map_base = 0x9C00 if (lcdc & 0x08) else 0x9800
+        # Tile data: bit 4 of LCDC (0 = signed from 0x9000, 1 = unsigned from 0x8000)
+        signed = not (lcdc & 0x10)
 
-        # Background tile data: bit 4 of LCDC
-        # 0 = signed tile numbers from base 0x9000 (0x8800-0x97FF), 1 = unsigned from 0x8000
-        tile_data_base = 0x8000 if (lcdc & 0x10) else 0x9000
-        use_signed = not (lcdc & 0x10)
-
-        # Calculate which row of the 256x256 background we're on
+        # Row of the 256x256 background this scanline shows
         y_pos = (ly + scy) & 0xFF
+        map_row = tile_map_base + (y_pos >> 3) * 32
 
-        # Which tile row (0-31, since 256 pixels / 8 pixels per tile = 32 tiles)
-        tile_row = y_pos // 8
-
-        # Which line within that tile (0-7)
-        tile_line = y_pos % 8
-
-        # Render each pixel in this scanline
-        for x in range(self.SCREEN_WIDTH):
-            # Calculate X position in 256x256 background
-            x_pos = (x + scx) & 0xFF
-
-            # Which tile column (0-31)
-            tile_col = x_pos // 8
-
-            # Which pixel within that tile (0-7)
-            tile_pixel = x_pos % 8
-
-            # Get tile number from tile map
-            tile_map_addr = tile_map_base + (tile_row * 32) + tile_col
-
-            # PPU needs unrestricted access to VRAM during rendering
-            self.memory._bypass_ppu_restrictions = True
-            tile_num = self.memory.read_byte(tile_map_addr)
-
-            # Calculate tile data address
-            if use_signed:
-                # Signed addressing: treat tile_num as signed byte
-                if tile_num > 127:
-                    tile_num = tile_num - 256
-                tile_addr = tile_data_base + (tile_num * 16) + (tile_line * 2)
-            else:
-                # Unsigned addressing
-                tile_addr = tile_data_base + (tile_num * 16) + (tile_line * 2)
-
-            # Read tile data (2 bytes per line, 1 bit from each byte per pixel)
-            byte1 = self.memory.read_byte(tile_addr)
-            byte2 = self.memory.read_byte(tile_addr + 1)
-            self.memory._bypass_ppu_restrictions = False
-
-            # Get color index (0-3) for this pixel
-            # Bit 7 is leftmost pixel, bit 0 is rightmost
-            bit_pos = 7 - tile_pixel
-            color_bit_low = (byte1 >> bit_pos) & 1
-            color_bit_high = (byte2 >> bit_pos) & 1
-            color_index = (color_bit_high << 1) | color_bit_low
-
-            # Apply background palette
-            bgp = self.memory.read_byte(0xFF47)
-            color = (bgp >> (color_index * 2)) & 0x03
-
-            # Store in screen buffer
-            self.screen_buffer[ly][x] = color
+        # 21 tiles cover 160 pixels at any fine X scroll; the map wraps every 32 tiles
+        pixels = self._tile_line_pixels(d, map_row, scx >> 3, 21, signed, y_pos & 7)
+        fine_x = scx & 7
+        row[:] = [palette[c] for c in pixels[fine_x:fine_x + self.SCREEN_WIDTH]]
 
     def _render_window_scanline(self, ly: int, lcdc: int):
         """
@@ -349,78 +328,35 @@ class PPU:
             ly: Current scanline number (0-143)
             lcdc: LCD control register value
         """
-        # Get window position
-        wy = self.memory.read_byte(0xFF4A)  # Window Y position
-        wx = self.memory.read_byte(0xFF4B)  # Window X position minus 7
+        d = self.memory._data
+        wy = d[0xFF4A]  # Window Y position
+        wx = d[0xFF4B]  # Window X position minus 7
 
         # Check if window is visible on this scanline
         if ly < wy:
             return  # Window hasn't started yet
 
-        # Window tile map: bit 6 of LCDC
-        # 0 = 0x9800-0x9BFF, 1 = 0x9C00-0x9FFF
+        # Window tile map: bit 6 of LCDC (0 = 0x9800, 1 = 0x9C00)
         tile_map_base = 0x9C00 if (lcdc & 0x40) else 0x9800
-
         # Window uses same tile data as background (bit 4 of LCDC)
-        tile_data_base = 0x8000 if (lcdc & 0x10) else 0x9000
-        use_signed = not (lcdc & 0x10)
+        signed = not (lcdc & 0x10)
 
-        # Window internal line counter (which line of window we're rendering)
+        # Window line: which line of the window we're rendering
         window_y = ly - wy
 
-        # Which tile row in window
-        tile_row = window_y // 8
-
-        # Which line within that tile
-        tile_line = window_y % 8
-
-        # Render window pixels
         # WX=7 means window starts at screen X=0
-        # WX=0 means window starts at screen X=-7 (off screen)
         window_x_start = max(0, wx - 7)
+        width = self.SCREEN_WIDTH - window_x_start
+        if width <= 0:
+            return
 
-        for x in range(window_x_start, self.SCREEN_WIDTH):
-            # X position within window (0-based)
-            window_x = x - window_x_start
+        bgp = d[0xFF47]  # window uses the background palette
+        palette = [(bgp >> (i * 2)) & 0x03 for i in range(4)]
+        map_row = tile_map_base + (window_y >> 3) * 32
+        pixels = self._tile_line_pixels(d, map_row, 0, (width + 7) >> 3, signed, window_y & 7)
 
-            # Which tile column
-            tile_col = window_x // 8
-
-            # Which pixel within tile
-            tile_pixel = window_x % 8
-
-            # Get tile number from tile map
-            tile_map_addr = tile_map_base + (tile_row * 32) + tile_col
-
-            # PPU needs unrestricted access to VRAM
-            self.memory._bypass_ppu_restrictions = True
-            tile_num = self.memory.read_byte(tile_map_addr)
-
-            # Calculate tile data address
-            if use_signed:
-                if tile_num > 127:
-                    tile_num = tile_num - 256
-                tile_addr = tile_data_base + (tile_num * 16) + (tile_line * 2)
-            else:
-                tile_addr = tile_data_base + (tile_num * 16) + (tile_line * 2)
-
-            # Read tile data
-            byte1 = self.memory.read_byte(tile_addr)
-            byte2 = self.memory.read_byte(tile_addr + 1)
-            self.memory._bypass_ppu_restrictions = False
-
-            # Get color index
-            bit_pos = 7 - tile_pixel
-            color_bit_low = (byte1 >> bit_pos) & 1
-            color_bit_high = (byte2 >> bit_pos) & 1
-            color_index = (color_bit_high << 1) | color_bit_low
-
-            # Apply background palette (window uses same palette as background)
-            bgp = self.memory.read_byte(0xFF47)
-            color = (bgp >> (color_index * 2)) & 0x03
-
-            # Window overwrites background
-            self.screen_buffer[ly][x] = color
+        # Window overwrites background
+        self.screen_buffer[ly][window_x_start:] = [palette[c] for c in pixels[:width]]
 
     def _render_sprites_scanline(self, ly: int, lcdc: int):
         """
@@ -441,16 +377,16 @@ class PPU:
         # Byte 3: Flags (priority, Y flip, X flip, palette)
 
         sprites_on_line = []
+        d = self.memory._data  # the PPU reads OAM and VRAM directly
 
         # Scan all 40 sprites
-        self.memory._bypass_ppu_restrictions = True
         for sprite_index in range(40):
             oam_addr = 0xFE00 + (sprite_index * 4)
 
-            y_pos = self.memory.read_byte(oam_addr + 0)
-            x_pos = self.memory.read_byte(oam_addr + 1)
-            tile_num = self.memory.read_byte(oam_addr + 2)
-            flags = self.memory.read_byte(oam_addr + 3)
+            y_pos = d[oam_addr]
+            x_pos = d[oam_addr + 1]
+            tile_num = d[oam_addr + 2]
+            flags = d[oam_addr + 3]
 
             # Adjust positions (hardware stores Y-16, X-8)
             y_pos = y_pos - 16
@@ -488,7 +424,7 @@ class PPU:
 
             # Get palette
             palette_addr = 0xFF48 if palette_num == 0 else 0xFF49
-            palette = self.memory.read_byte(palette_addr)
+            palette = d[palette_addr]
 
             # Calculate which line of the sprite we're rendering
             sprite_line = ly - y_pos
@@ -509,8 +445,8 @@ class PPU:
             tile_addr = 0x8000 + (tile_num * 16) + (sprite_line * 2)
 
             # Read tile data
-            byte1 = self.memory.read_byte(tile_addr)
-            byte2 = self.memory.read_byte(tile_addr + 1)
+            byte1 = d[tile_addr]
+            byte2 = d[tile_addr + 1]
 
             # Render each pixel of the sprite
             for pixel_x in range(8):
@@ -549,8 +485,6 @@ class PPU:
 
                 # Draw sprite pixel
                 self.screen_buffer[ly][screen_x] = color
-
-        self.memory._bypass_ppu_restrictions = False
 
     def get_screen_buffer(self):
         """
