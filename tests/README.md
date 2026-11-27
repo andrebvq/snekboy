@@ -1,218 +1,42 @@
-# Test Suite Organization
+# Tests
 
-## Quick Start
+## Running
 
-### Run Unit Tests
 ```bash
-# Run all unit tests
-python tests/run_unit_tests.py all
-
-# Run specific unit test
-python tests/run_unit_tests.py cpu
-python tests/run_unit_tests.py timer
-python tests/run_unit_tests.py joypad
+pip install pytest
+python -m pytest tests                 # all 75 unit tests, about a minute
+python -m pytest tests/test_ppu.py -q  # one file
+python tests/run_all_test_roms.py      # Blargg ROMs from test_roms/
 ```
 
-### Run Blargg Tests
-```bash
-# Run Blargg cpu_instrs test ROM
-python tests/run_blargg_tests.py
+`test_display.py` uses SDL's dummy video driver, so no window opens.
 
-# Run with debug output
-python tests/run_blargg_tests.py debug
-```
+## Unit tests
 
-### Run Diagnostic Tools
-```bash
-# Check Tetris game state
-python tests/diagnostic_tools.py tetris_state
+| File | Tests | Covers |
+|---|---|---|
+| `test_cpu.py` | 8 | Instruction behaviour; the dispatch table against the decoder for every opcode and CB opcode |
+| `test_fast_ops.py` | 2 | Each dedicated handler against the generic one, 40 random states per opcode (registers, flags, memory, bus timing, cycles) |
+| `test_interrupts.py` | 11 | EI/DI delay, dispatch and IE push, HALT bug, DIV-write edge, TIMA reload cycle; timer fast path against the exact path |
+| `test_timer.py` | 4 | DIV and TIMA rates, TMA reload |
+| `test_timing.py` | 7 | Per-access timing, OAM DMA window and restart, serial transfer, joypad interrupt |
+| `test_halt_skip.py` | 1 | HALT skip-ahead against one-M-cycle idling, 60 random timer/PPU setups |
+| `test_lazy_sync.py` | 3 | The frame loop against plain `step()` on random I/O programs: registers before every instruction, the timing of every I/O access, final timer/PPU state and screen |
+| `test_ppu.py` | 17 | Tile addressing, window, sprite priority, LCD off/on, STAT line, mode-3 length, line 153 |
+| `test_memory.py` | 4 | Basic reads and writes |
+| `test_memory_map.py` | 6 | Read-only ROM, echo RAM, unusable area, unused I/O bits, FF50, post-boot values |
+| `test_cartridge.py` | 10 | MBC1/2/3/5 banking, RAM enable, MBC3 clock, saves |
+| `test_display.py` | 2 | Palette shades and palette switching |
+| `test_joypad.py` | script | P1 group selection and button bits; its checks run when pytest imports it |
 
-# Trace interrupt behavior
-python tests/diagnostic_tools.py trace_interrupts
+### Differential tests and planted bugs
 
-# Monitor VBlank interrupts
-python tests/diagnostic_tools.py check_vblank
+Each optimisation (timer fast path, dispatch table, dedicated handlers, HALT skip, lazy sync, frame loop) has a test that runs it against the straightforward code on random input and requires identical results. Each of these tests was checked by planting a small bug in the optimised path, such as an off-by-one in a cycle count or a missing interrupt check, and confirming that the test fails. When a planted bug went undetected, the test was strengthened. For example, the lazy-sync test now also compares when each I/O access happens inside its instruction.
 
-# Analyze polling loops
-python tests/diagnostic_tools.py polling_loop
-```
+## Test ROMs
 
----
+`test_roms/` holds Blargg's test ROMs with their sources. `run_all_test_roms.py` runs seven of them and reads the result from the serial output: `cpu_instrs`, `03-op sp,hl`, `instr_timing`, `interrupt_time`, both `mem_timing`, and `halt_bug`. The ROMs report by printing "Passed" or "Failed". `interrupt_time` is expected to fail, because it needs Game Boy Color double speed.
 
-## Test Categories
+The release results in the main README (all 33 non-sound Blargg ROMs, 111 mooneye ROMs, dmg-acid2) come from a separate harness that is not part of the repository. The mooneye ROMs and dmg-acid2 are not distributed here.
 
-### 1. Organized Test Suites (USE THESE)
-
-#### `run_unit_tests.py`
-Runs unit tests for individual components:
-- CPU instruction execution
-- Memory system
-- Timer (DIV, TIMA, TAC)
-- Interrupts (EI, DI, RETI)
-- Joypad
-- PPU basics
-
-#### `run_blargg_tests.py`
-Runs Blargg cpu_instrs test ROM suite:
-- Tests 01-11 (currently 01-02 pass)
-- Standard test ROM for CPU verification
-- Serial output capture
-
-#### `diagnostic_tools.py`
-Interactive debugging tools:
-- `tetris_state` - Full state dump at specific cycle
-- `trace_interrupts` - Track IME changes
-- `check_vblank` - Monitor VBlank interrupts
-- `polling_loop` - Analyze stuck loops
-
----
-
-### 2. Legacy Individual Tests (Historical Reference)
-
-The `tests/` directory contains many individual test files from debugging sessions.
-These are kept for reference but should NOT be used for regular testing.
-
-**Categories of legacy tests:**
-
-#### Blargg Test 03 Investigation
-Files investigating the test 03 timeout issue:
-- `test_03_*.py` - Various test 03 specific tests
-- `test_trace_03_*.py` - Detailed traces of test 03 execution
-- `test_blargg_03_*.py` - Instrumented test 03 runs
-
-#### Timer Debugging
-Files from timer system debugging:
-- `test_timer*.py` - Timer behavior tests
-- `test_div_*.py` - DIV register tests
-- `test_tac_*.py` - TAC register tests
-- `test_tma_*.py` - TMA reload tests
-- `compare_timer_approaches.py` - Timer implementation comparison
-
-#### Instruction Debugging
-Files testing specific instructions:
-- `test_add_*.py` - ADD instruction variants
-- `test_sub_*.py` - SUB instruction tests
-- `test_ld.py` - Load instruction tests
-- `test_pop_af.py` - POP AF flag masking
-
-#### Stack/SP Debugging
-Files investigating stack pointer issues:
-- `test_sp_hl_*.py` - SP and HL interaction tests
-- `test_add_sp_*.py` - ADD SP,e instruction tests
-- `test_find_*_push.py` - Stack operation traces
-
-#### Tetris Game Debugging
-Files from Tetris-specific debugging:
-- `debug_tetris.py` - Tetris execution tracing
-- `wait_for_*.py` - Wait for specific game states
-- `check_polling_loop.py` - Polling loop analysis
-- `diagnose_stuck_state.py` - Comprehensive state dump
-- `trace_*_isr.py` - Interrupt handler traces
-- `find_vblank_handler.py` - VBlank handler location
-
-#### General Debugging Tools
-Miscellaneous debugging scripts:
-- `analyze_*.py` - Loop and code analysis
-- `trace_*.py` - Execution tracing
-- `verify_*.py` - Verification of specific behaviors
-- `where_is_cpu.py` - CPU state inspection
-
----
-
-## Creating New Tests
-
-### Unit Test Template
-```python
-"""
-Test description
-"""
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from src.cpu import CPU
-
-def test_feature():
-    cpu = CPU()
-    # ... test code ...
-    assert condition, "Error message"
-    print("[PASS] Test passed")
-
-if __name__ == "__main__":
-    test_feature()
-```
-
-### Add to run_unit_tests.py
-```python
-UNIT_TESTS = {
-    # ...
-    "new_test": "tests/test_new_feature.py",
-}
-```
-
----
-
-## Test ROM Downloads
-
-Download Blargg test ROMs:
-```bash
-python tests/download_test_roms.py
-```
-
-This creates `test_roms/` directory with:
-- `cpu_instrs.gb` - Complete CPU instruction test suite
-- Individual test ROMs (01-special.gb, 02-interrupts.gb, etc.)
-
----
-
-## Current Test Status
-
-### Passing Tests
-- Test 01: Special instructions
-- Test 02: Interrupts
-- All unit tests (CPU, memory, timer, interrupts, joypad)
-
-### Failing Tests
-- Test 03: OP SP,HL (times out)
-- Tests 04-11: Not yet attempted
-
-### Known Issues
-- Test 03 timeout - see development.md for investigation details
-- Likely related to `ADD SP,e` or `LD HL,SP+e` flag calculations
-
----
-
-## Debugging Workflow
-
-1. **Unit test fails** → Check specific component test
-2. **Blargg test fails** → Use diagnostic tools to trace execution
-3. **Game doesn't work** → Use Tetris diagnostic tools
-4. **Need to investigate** → Create focused test script, save in tests/
-
-Example workflow for new bug:
-```bash
-# 1. Identify which component is failing
-python tests/run_unit_tests.py all
-
-# 2. Run Blargg tests to see error code
-python tests/run_blargg_tests.py
-
-# 3. Use diagnostic tools
-python tests/diagnostic_tools.py trace_interrupts
-
-# 4. Create focused test if needed
-# ... write test_new_bug.py ...
-
-# 5. Fix bug in src/
-
-# 6. Verify fix
-python tests/run_unit_tests.py all
-python tests/run_blargg_tests.py
-```
-
----
-
-## Additional Resources
-
-- `docs/development.md` - Current project status and known issues
-- `docs/` - Implementation details for each component
+`test_with_blargg.py` is an early runner, kept for reference. It contains no pytest tests.

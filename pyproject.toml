@@ -7,7 +7,7 @@ name = "snekboy"
 dynamic = ["version"]
 description = "Game Boy (DMG) emulator written in Python"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Andre"}
@@ -20,7 +20,6 @@ classifiers = [
     "Topic :: Games/Entertainment",
     "Topic :: System :: Emulators",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

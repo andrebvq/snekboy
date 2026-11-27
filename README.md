@@ -1,287 +1,162 @@
 # SnekBoy
 
-A Game Boy (DMG) emulator written in Python, implementing the complete Sharp LR35902 CPU instruction set and core hardware components.
+SnekBoy is an original Game Boy (DMG) emulator written in pure Python, with pygame for the display and input. It models the Sharp LR35902 CPU, the timer, the interrupts, the picture processing unit (PPU), OAM DMA, the serial port and the common cartridge mappers, timed to the individual memory access. It plays most of the commercial games tested, and every DMG-specific mooneye acceptance test passes. Audio is not emulated.
 
-<img width="462" height="176" alt="Sb" src="https://github.com/user-attachments/assets/cd4fc784-ecff-4798-a9d1-94cecba4cec5" />
+<img width="462" height="176" alt="SnekBoy" src="https://github.com/user-attachments/assets/cd4fc784-ecff-4798-a9d1-94cecba4cec5" />
 
-## Overview
+The project is a learning exercise in hardware emulation: it aims to be correct first and readable second, and then as fast as pure Python allows. Its full development history, including what was wrong at each release, how it was found and why each fix is correct, is written up in the [Developer's Logbook](docs/developer_logbook.html).
 
-SnekBoy is a Game Boy emulator that aims to accurately emulate the original Game Boy hardware, including CPU, PPU (graphics), timer system, joypad input, and interrupt handling. It passes Blargg's cpu_instrs and instr_timing and supports MBC1, MBC2, MBC3 and MBC5 cartridges with battery saves.
+<img width="306" height="276" alt="Tetris running in SnekBoy" src="https://github.com/user-attachments/assets/95abb3ab-3b99-4bba-a482-7d5468d314d6" />
 
-<img width="306" height="276" alt="tt" src="https://github.com/user-attachments/assets/95abb3ab-3b99-4bba-a482-7d5468d314d6" />
+## Status at a glance
 
-## Features
+| Area | State |
+|---|---|
+| CPU | All 245 defined opcodes and 256 CB opcodes; HALT bug, EI delay and interrupt dispatch as on hardware; the 11 undefined opcodes lock the CPU |
+| Timing | Each memory access happens on its own M-cycle; the timer, PPU and DMA catch up before any access that can observe them |
+| Graphics | Background, window and sprites; pixel-exact on dmg-acid2; mode-3 length varies with scroll, window and sprites |
+| Cartridges | ROM only, MBC1, MBC2, MBC3 (with real-time clock), MBC5; battery saves |
+| Other hardware | Timer with all edge cases tested by mooneye; OAM DMA; serial port timing (no link partner); joypad |
+| Not implemented | Audio (APU), the DMG OAM corruption bug, MBC1 multicart, Game Boy Color |
+| Speed | 5 of 11 tested games reach full speed (60 fps) in gameplay on Python 3.10; the rest run at 51-55 fps |
 
-- Complete CPU emulation (all 512 opcodes)
-- Pixel Processing Unit (PPU) with background, window, and sprite rendering
-- Accurate timing system (DIV, TIMA, TMA, TAC registers)
-- Full interrupt support (VBlank, STAT, Timer, Serial, Joypad)
-- Joypad input with keyboard mapping
-- Boot ROM simulation
-- Execution tracing for debugging
-- Pygame-based display output
+## Quick start
 
-## Quick Start
-
-### Installation
+Requirements: Python 3.9 or newer (developed on 3.10) and pygame 2.
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/snekboy.git
+git clone https://github.com/andrebvq/snekboy.git
 cd snekboy
-
-# Install dependencies
 pip install pygame
-```
-
-### Running Games
-
-```bash
-# Run with a ROM file
-python -m src.emulator path/to/game.gb
-
-# Run without tracing (better performance)
 python -m src.emulator path/to/game.gb --no-trace
-
-# Run test pattern (no ROM required)
-python -m src.emulator
 ```
+
+Without `--no-trace`, the emulator also writes a debug trace to `tracing/tracing.txt` (see [Debugging tools](#debugging-tools)). Run without a ROM, it shows a test pattern. Battery-backed games save to `<rom>.sav`, with the MBC3 clock in `<rom>.rtc`, when you quit with ESC or by closing the window.
 
 ### Controls
 
-**Game Buttons:**
-- A: A key
-- B: S key
-- Start: Z key
-- Select: X key
+| Game Boy | Key | | Game Boy | Key |
+|---|---|---|---|---|
+| A | A | | Up | I |
+| B | S | | Down | K |
+| Start | Z | | Left | J |
+| Select | X | | Right | L |
+| Switch palette (green, classic, grey) | P | | Quit | ESC |
 
-**D-Pad:**
-- Up: I key
-- Down: K key
-- Left: J key
-- Right: L key
-
-**System:**
-- Switch colour palette (green / classic / grey): P key
-- Quit: ESC key
-
-## Project Structure
+## Project structure
 
 ```
 snekboy/
-├── src/                        # Source code
-│   ├── cpu.py                  # CPU emulation core
-│   ├── cpu_decoder.py          # Instruction decoder
-│   ├── instructions_impl.py    # Instruction implementations
-│   ├── memory.py               # Memory management and I/O
-│   ├── ppu.py                  # Graphics rendering
-│   ├── joypad.py               # Input handling
-│   ├── tracer.py               # Execution tracing
-│   ├── display.py              # Display output
-│   ├── emulator.py             # Main emulator loop
-│   ├── registers.py            # CPU registers
-│   ├── opcodes.py              # Opcode definitions
-│   ├── gameboy_doctor.py       # Test integration
-│   └── utils.py                # Utility functions
-│
-├── tests/                      # Test suite
-│   ├── README.md               # Test documentation
-│   ├── run_unit_tests.py       # Component tests
-│   ├── run_blargg_tests.py     # Blargg test ROMs
-│   └── diagnostic_tools.py     # Debugging tools
-│
-├── docs/                       # Documentation
-│   ├── gameboy_reference.md    # Hardware reference
-│   ├── development.md          # Implementation details
-│   ├── tracing.md              # Tracing guide
-│   └── opcode_reference.md     # Opcode quick reference
-│
-├── test_roms/                  # Test ROM files
-├── tools/                      # Development tools
-│   └── disassemble_rom.py      # ROM disassembler
-│
-├── pyproject.toml              # Project configuration
-└── README.md                   # This file
+├── src/
+│   ├── emulator.py           # entry point: window, frame loop, saves, tracing hooks
+│   ├── cpu.py                # CPU core: dispatch, interrupts, timer, per-access timing, frame loop
+│   ├── cpu_decoder.py        # opcode decoder (used once at start-up to build the dispatch table)
+│   ├── instructions_impl.py  # generic instruction handlers
+│   ├── fast_ops.py           # dedicated handlers for frequent opcodes, generated from templates
+│   ├── opcodes.py            # opcode table: mnemonics, lengths, T-cycles, flags
+│   ├── registers.py          # registers and the flag byte
+│   ├── memory.py             # memory map, I/O registers, OAM DMA, serial, access locks
+│   ├── cartridge.py          # ROM header, MBC1/2/3/5 mappers, real-time clock, battery saves
+│   ├── ppu.py                # PPU: modes, STAT line, background, window, sprites
+│   ├── joypad.py             # P1 register and joypad interrupt
+│   ├── display.py            # pygame window, palettes, keyboard
+│   ├── tracer.py             # trace file writer
+│   ├── gameboy_doctor.py     # Gameboy Doctor log output
+│   ├── version.py            # single source of the version number
+│   └── utils.py
+├── tests/                    # pytest unit tests and a Blargg ROM runner (see tests/README.md)
+├── test_roms/                # Blargg's test ROMs with their sources
+├── tools/disassemble_rom.py  # prints the first instructions at a ROM's entry point
+├── docs/                     # documentation (see below)
+├── CHANGELOG.md
+└── pyproject.toml
 ```
 
-## Components
+### How a frame runs
 
-### CPU (src/cpu.py)
-Emulates the Sharp LR35902 processor, a modified Z80:
-- All 256 standard opcodes (0x00-0xFF)
-- All 256 CB-prefixed opcodes (0xCB00-0xCBFF)
-- 8-bit and 16-bit arithmetic operations
-- Bit manipulation instructions (SET, RES, BIT, SWAP)
-- Control flow (JP, JR, CALL, RET, RST)
-- Stack operations (PUSH, POP)
-- Special instructions (DAA, HALT, STOP, EI, DI, RETI)
-- Accurate flag handling (Zero, Negative, Half-carry, Carry)
-- Cycle-accurate timing
+The window loop asks the CPU to run 70,224 T-cycles, one frame, with `cpu.run_until_cycle()`. That loop runs instructions through a dispatch table built at start-up. The timer and PPU are brought up to date only when something could observe them: an I/O or video-memory access, a point where an interrupt could be raised, or the end of the frame. A halted CPU skips ahead to the next timer or PPU event. The PPU draws each line into a buffer, and the frame is shown and paced to 60 fps. [docs/architecture.md](docs/architecture.md) describes each part.
 
-### Memory (src/memory.py)
-Manages the 64KB address space:
-- ROM banking support (0x0000-0x7FFF)
-- VRAM (0x8000-0x9FFF) with PPU access restrictions
-- Work RAM (0xC000-0xDFFF)
-- OAM sprite table (0xFE00-0xFE9F)
-- I/O registers (0xFF00-0xFF7F)
-- High RAM (0xFF80-0xFFFE)
-- Boot ROM overlay simulation
-- DMA transfer support
+## Accuracy
 
-### PPU (src/ppu.py)
-Picture Processing Unit for graphics:
-- 160x144 pixel display
-- Background layer with scrolling (SCX, SCY)
-- Window layer overlay
-- Sprite rendering (40 sprites, 8x8 or 8x16 mode)
-- 4 grayscale colors with palette support
-- PPU modes: OAM Search, Pixel Transfer, HBlank, VBlank
-- Cycle-accurate timing (456 T-cycles per scanline)
-- STAT and VBlank interrupts
+| Test suite | Passing | What still fails, and why |
+|---|---|---|
+| Blargg `cpu_instrs` (combined and 11 singles) | 12 / 12 | — |
+| Blargg `instr_timing`, `mem_timing`, `mem_timing-2`, `halt_bug` | 9 / 9 | — |
+| Blargg `interrupt_time` | 0 / 1 | Needs Game Boy Color double speed |
+| Blargg `oam_bug` | 3 / 9 | The DMG OAM corruption bug is not emulated |
+| mooneye-test-suite (DMG-relevant set) | 93 / 111 | Every failure targets another model (DMG0, MGB, SGB, CGB, AGB) or the MBC1 multicart |
+| dmg-acid2 | exact | 0 wrong pixels against the reference image |
+| Unit tests (pytest) | 75 / 75 | — |
 
-### Timer (src/cpu.py _update_timers)
-Implements the Game Boy timer system:
-- DIV register (0xFF04): 16384 Hz divider
-- TIMA register (0xFF05): Programmable timer counter
-- TMA register (0xFF06): Timer modulo/reload value
-- TAC register (0xFF07): Timer control (enable and frequency)
-- Four frequency modes: 4096 Hz, 262144 Hz, 65536 Hz, 16384 Hz
-- Falling-edge detection for TIMA increments
-- Overflow behavior with 1-cycle delay
-- Timer interrupt generation
+Blargg's sound tests are excluded, since there is no APU. The mooneye ROMs are not included in this repository.
 
-### Joypad (src/joypad.py)
-Input handling via P1 register (0xFF00):
-- 8 buttons: A, B, Start, Select, Up, Down, Left, Right
-- Button group selection (action buttons / d-pad)
-- Joypad interrupt on button press
-- Keyboard event mapping
+### Games tested
 
-### Display (src/display.py)
-Graphics output using Pygame:
-- 480x432 window (3x scaling from 160x144)
-- 60 FPS frame limiting
-- Game Boy color palette
-- Keyboard input handling
+These were measured on Python 3.10 over frames 700-1200, after getting into the game, with the frame cap removed. Full speed is 60 fps; the window caps at 60.
 
-### Tracer (src/tracer.py)
-Execution tracing for debugging:
-- LCDC register writes (LCD on/off)
-- VRAM writes
-- LY register reads
-- DMA transfers
-- VBlank interrupts
-- State snapshots
-- Configurable sampling to minimize overhead
+| Game | Mapper | Gameplay fps | | Game | Mapper | Gameplay fps |
+|---|---|---|---|---|---|---|
+| Final Fantasy Legend | MBC2 + battery | 118 | | Wario Land II | MBC5 + battery | 55 |
+| Dr. Mario | ROM only | 99 | | Alleyway | ROM only | 54 |
+| Super Mario Land | MBC1 | 83 | | Pokémon Gold | MBC3 + clock + battery | 54 |
+| Super Mario Land 2 | MBC1 + battery | 82 | | Pokémon Red | MBC3 + battery | 52 |
+| Zelda: Link's Awakening DX (Japan) | MBC5 + battery | 66 | | Kirby's Dream Land | MBC1 | 51 |
+| | | | | Tetris | ROM only | 51 |
 
-## Dependencies
+All 11 play correctly as far as they were tested by hand. Games that wait for the next frame with `HALT` run fastest. Games that busy-wait in a loop reading the LCD status cost the most per emulated frame. On v0.9, Python 3.11 ran SnekBoy about 1.9× faster than 3.10 (Tetris 36 → 72 fps over the intro); it has not yet been measured on the current version.
 
-- Python 3.8 or higher
-- pygame >= 2.0.0
+## Testing
 
 ```bash
-pip install pygame
+pip install pytest
+python -m pytest tests            # 75 unit tests, about a minute
+python tests/run_all_test_roms.py # Blargg ROMs from test_roms/, reported through the serial port
 ```
 
-## Workflow
+The unit tests cover each component. Several are differential: the optimised paths are run against the generic code on random states, and each such test was checked by planting a bug and confirming that it fails. [tests/README.md](tests/README.md) lists what each file covers.
 
-### Execution
-```bash
-# Standard execution
-python -m src.emulator path/to/rom.gb
+## Debugging tools
 
-# With tracing disabled
-python -m src.emulator path/to/rom.gb --no-trace
+| Tool | How to use | What it gives |
+|---|---|---|
+| Trace file | on by default; `--no-trace` turns it off | `tracing/tracing.txt` with LCD on/off writes, sampled VRAM writes and LY reads, DMA starts and a state line each second ([docs/tracing.md](docs/tracing.md)) |
+| Gameboy Doctor | `GAMEBOY_DOCTOR=1` | a CPU state log in the format of [Gameboy Doctor](https://github.com/robert/gameboy-doctor), for comparing against reference logs |
+| Disassembler | `python tools/disassemble_rom.py rom.gb` | the first 50 instructions from 0x0100 |
 
-# Test pattern (no ROM)
-python -m src.emulator
-```
+## Documentation
 
-### Testing
-```bash
-# Run all unit tests
-python tests/run_unit_tests.py all
+| Document | Contents |
+|---|---|
+| [Developer's Logbook](docs/developer_logbook.html) | Every release from 0.1 to 0.9.2: the state of the emulator, the problems found and how, each fix with the hardware behaviour behind it, and how it was verified. Open it in a browser. |
+| [docs/architecture.md](docs/architecture.md) | How the emulator is built: components, timing model, frame loop, optimisations |
+| [docs/gameboy_reference.md](docs/gameboy_reference.md) | Compact Game Boy hardware reference: memory map, registers, timings |
+| [docs/opcode_reference.md](docs/opcode_reference.md) | Instruction groups with cycles and flag effects |
+| [docs/tracing.md](docs/tracing.md) | The trace file format |
+| [tests/README.md](tests/README.md) | The test suite |
+| [CHANGELOG.md](CHANGELOG.md) | All changes, release by release |
 
-# Run specific component tests
-python tests/run_unit_tests.py cpu
-python tests/run_unit_tests.py timer
-python tests/run_unit_tests.py joypad
+## Versioning
 
-# Run Blargg test ROMs
-python tests/run_blargg_tests.py
+**Current version: 0.9.2 (Frame loop).** Each frame now runs in one inline loop for the common case: the CPU is running, code is in ROM or RAM, and no DMA or interrupt is pending. Anything else goes through the general `step()` path. Behaviour is unchanged (every executed instruction of 12 games matches 0.9.1). Gameplay speed of the slower games rose 6-33%, for example Kirby 39 → 51 fps and Zelda DX 53 → 66 fps.
 
-# Download test ROMs (first time)
-python tests/download_test_roms.py
-```
-
-### Debugging
-```bash
-# Check game state at specific cycle
-python tests/diagnostic_tools.py tetris_state
-
-# Trace interrupt behavior
-python tests/diagnostic_tools.py trace_interrupts
-
-# Monitor VBlank interrupts
-python tests/diagnostic_tools.py check_vblank
-
-# Analyze polling loops
-python tests/diagnostic_tools.py polling_loop
-```
-
-Execution traces are written to `tracing/tracing.txt` when enabled. See `docs/tracing.md` for details.
+Releases are numbered 0.x while features and accuracy are being built. From 0.9 onwards, performance and polish releases are numbered 0.9.1, 0.9.2 and so on until 1.0. Each release is a tagged merge of one pull request. [CHANGELOG.md](CHANGELOG.md) lists every release, and the [Developer's Logbook](docs/developer_logbook.html) explains each one in depth.
 
 ## References
 
-### Game Boy Documentation
-- [Pan Docs](https://gbdev.io/pandocs/) - Complete Game Boy technical reference
-- [Game Boy CPU Manual](http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf) - Official CPU documentation
-- [GBEDG](https://github.com/Hacktix/GBEDG) - Edge case and timing documentation
-- [Opcode Table](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) - Instruction reference
+| Resource | Used for |
+|---|---|
+| [Pan Docs](https://gbdev.io/pandocs/) | The main hardware reference |
+| [GBEDG](https://github.com/Hacktix/GBEDG) | Timer, PPU and edge-case details |
+| [Opcode table](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) | Instruction lengths, cycles and flags |
+| [Blargg's test ROMs](https://gbdev.gg8.se/files/roms/blargg-gb-tests/) (Shay Green) | CPU, timing and HALT tests |
+| [mooneye-test-suite](https://github.com/Gekkio/mooneye-test-suite) (Joonas Javanainen) | Hardware edge cases per model |
+| [dmg-acid2](https://github.com/mattcurrie/dmg-acid2) (Matt Currie) | PPU rendering test |
+| [Gameboy Doctor](https://github.com/robert/gameboy-doctor) (Robert Heaton) | CPU log comparison |
+| [SameBoy](https://sameboy.github.io/), [Gambatte](https://github.com/sinamas/gambatte), [BGB](https://bgb.bircd.org/) | Reference emulators for behaviour questions |
+| [r/EmuDev](https://www.reddit.com/r/EmuDev/), [gbdev.io](https://gbdev.io/) | Community |
 
-### Test ROMs
-- [Blargg's Test ROMs](https://gbdev.gg8.se/files/roms/blargg-gb-tests/) - CPU and timing tests by Shay Green
-  - cpu_instrs.gb - CPU instruction test suite
-  - instr_timing.gb - Instruction timing verification
-  - mem_timing.gb - Memory timing tests
-  - interrupt_time.gb - Interrupt timing tests
-
-- [Mooneye Test Suite](https://github.com/Gekkio/mooneye-test-suite) - Comprehensive hardware tests by Gekkio
-
-- [Gameboy Doctor](https://github.com/robert/gameboy-doctor) - CPU test integration tool by Robert Heaton
-
-### Reference Emulators
-- [BGB](https://bgb.bircd.org/) - Windows debugger and emulator
-- [SameBoy](https://sameboy.github.io/) - Highly accurate, hardware-verified emulator
-- [Gambatte](https://github.com/sinamas/gambatte) - Cycle-accurate emulator
-
-### Community
-- [r/EmuDev](https://www.reddit.com/r/EmuDev/) - Emulator development community
-- [GBDev](https://gbdev.io/) - Game Boy development resources
-
-## Test ROM Credits
-
-This emulator uses test ROMs created by the Game Boy development community:
-
-- **Blargg's Test ROMs** by Shay Green (blargg) - CPU instruction and timing tests
-- **Mooneye Test Suite** by Joonas Javanainen (Gekkio) - Hardware accuracy tests
-- **Gameboy Doctor** by Robert Heaton - CPU test framework
-
-Special thanks to all contributors to the Game Boy emulation and homebrew community.
+Thanks to the authors of these test ROMs and documents. This kind of project is not possible without them.
 
 ## License
 
-MIT License - See LICENSE file for details.
-
-## Development Status
-
-Current version: 0.9.2 (Pre-Alpha). See `CHANGELOG.md`.
-
-- Passes: Blargg cpu_instrs, instr_timing, mem_timing, halt_bug; dmg-acid2; all mooneye acceptance tests for DMG-ABC.
-- Cartridges: ROM only, MBC1, MBC2, MBC3 (with clock), MBC5. Battery saves go to `<rom>.sav`.
-- Not yet implemented: audio (APU).
-- Speed (in gameplay, Python 3.10): 5 of 11 tested games reach full speed (60 fps); the others run at 51-55 fps (Alleyway, Kirby, Pokémon Red/Gold, Tetris, Wario Land II).
-- Known gaps: no OAM corruption bug; no MBC1 multicart.
-
-For detailed implementation status and known issues, see `docs/development.md`.
+MIT. See [LICENSE](LICENSE).
