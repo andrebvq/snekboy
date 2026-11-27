@@ -6,7 +6,7 @@ SnekBoy is an original Game Boy (DMG) emulator written in pure Python, with pyga
 
 The project is a learning exercise in hardware emulation: it aims to be correct first and readable second, and then as fast as pure Python allows. Its full development history, including what was wrong at each release, how it was diagnosed and why each fix is correct, is written up in the [Developer's Logbook](docs/developer_logbook.html).
 
-<img width="306" height="276" alt="SnekBoy running a game" src="https://github.com/user-attachments/assets/95abb3ab-3b99-4bba-a482-7d5468d314d6" />
+<img width="320" height="288" alt="SnekBoy running a game intro: a ship in a thunderstorm" src="docs/images/intro.gif" />
 
 ## Status at a glance
 
