@@ -47,10 +47,12 @@ class CPU(InstructionImplementations):
         self._prev_timer_bit = False  # Previous value of selected timer bit for edge detection
         self._timer_overflow_cycles = 0  # 1 while TIMA reads 0x00 after overflow, before the TMA reload
         self._tima_reloaded = False  # True if the most recent M-cycle reloaded TIMA from TMA
+        self._serial_bits = 0  # bits left in an internally clocked serial transfer
 
         # Create memory with reference to this CPU
         self.memory = memory if memory else Memory(cpu=self)
         self.memory._cpu = self   # a Memory passed in must also reach the CPU's timer
+        self.memory.joypad.interrupt_callback = self._request_interrupt
 
         # Create PPU with reference to memory and interrupt callback
         self.ppu = PPU(self.memory, self._request_interrupt)
@@ -60,6 +62,8 @@ class CPU(InstructionImplementations):
         self.ime = False  # Interrupt Master Enable flag
         self._ei_pending = 0  # EI delay counter: counts down to 0 before enabling IME
         self._halt_bug_active = False  # HALT bug: skip next PC increment
+        self._acc = 0      # T-cycles started in the current instruction
+        self._synced = 0   # T-cycles the timer/PPU/DMA have been advanced to
         self.locked = False  # Set by an illegal opcode; the CPU stops until reset
         self.stopped = False  # STOP mode: CPU and timer frozen until a button is pressed
 
@@ -118,7 +122,7 @@ class CPU(InstructionImplementations):
 
     def fetch_byte(self) -> int:
         """Fetch next byte from memory at PC and increment PC"""
-        value = self.memory.read_byte(self.registers._pc)
+        value = self._read(self.registers._pc)
 
         # HALT bug: skip PC increment once
         if self._halt_bug_active:
@@ -131,8 +135,9 @@ class CPU(InstructionImplementations):
     
     def fetch_word(self) -> int:
         """Fetch next word (16-bit) from memory at PC and increment PC"""
-        value = self.memory.read_word(self.registers._pc)
-        self.registers._pc = validate_word(self.registers._pc + 2)
+        pc = self.registers._pc
+        value = self._read(pc) | (self._read((pc + 1) & 0xFFFF) << 8)
+        self.registers._pc = validate_word(pc + 2)
         return value
     
     def decode(self, opcode: int):
@@ -383,11 +388,13 @@ class CPU(InstructionImplementations):
         self.halted = False
 
         pc = self.registers._pc
+        self._acc += 8                      # two internal cycles
         sp = (self.registers._sp - 1) & 0xFFFF
-        self.memory.write_byte(sp, pc >> 8)
+        self._write(sp, pc >> 8)
+        self._catch_up()
         triggered = self.memory.read_byte(0xFFFF) & self.memory.read_byte(0xFF0F) & 0x1F
         sp = (sp - 1) & 0xFFFF
-        self.memory.write_byte(sp, pc & 0xFF)
+        self._write(sp, pc & 0xFF)
         self.registers._sp = sp
 
         if not triggered:
@@ -411,6 +418,15 @@ class CPU(InstructionImplementations):
             self._timer_overflow_cycles = 1
         else:
             self.memory._data[0xFF05] = tima
+
+    def _serial_shift(self) -> None:
+        """Shift one bit out of SB; with nothing connected, 1s shift in."""
+        d = self.memory._data
+        d[0xFF01] = ((d[0xFF01] << 1) | 1) & 0xFF
+        self._serial_bits -= 1
+        if not self._serial_bits:
+            d[0xFF02] &= 0x7F            # transfer done
+            self._request_interrupt(3)
 
     def _update_timers(self, cycles: int) -> None:
         """
@@ -444,6 +460,10 @@ class CPU(InstructionImplementations):
             prev_counter = self._system_counter
             self._system_counter = (self._system_counter + 4) & 0xFFFF
 
+            # Serial (internal clock, 8192 Hz): one bit per falling edge of counter bit 8
+            if self._serial_bits and prev_counter & 0x100 and not self._system_counter & 0x100:
+                self._serial_shift()
+
             # Update DIV register (increments every 256 T-cycles)
             # System counter bits: [15:14][13:6][5:0]
             # DIV uses bits 13-6 of system counter
@@ -476,10 +496,49 @@ class CPU(InstructionImplementations):
                     else:
                         self.memory._data[0xFF05] = tima
 
+    # --- bus timing -----------------------------------------------------------
+    # Inside an instruction, self._acc counts the T-cycles of the M-cycles
+    # started so far (fetches, reads, writes, internal delays) and
+    # self._synced how far the timer, PPU and OAM DMA have been advanced.
+    # Before an access that can observe them (I/O, VRAM, OAM, or anything
+    # while DMA runs) they catch up to the start of that access's M-cycle;
+    # the rest is advanced at the end of the instruction.
+
+    def _advance(self, t: int) -> None:
+        """Run the timer, PPU and OAM DMA for t T-cycles."""
+        mem = self.memory
+        if mem._dma_busy:
+            for _ in range(t >> 2):
+                self._update_timers(1)
+                self.ppu.step(4)
+                mem.dma_tick()
+        else:
+            self._update_timers(t >> 2)
+            self.ppu.step(t)
+
+    def _catch_up(self) -> None:
+        t = self._acc - self._synced
+        if t > 0:
+            self._synced = self._acc
+            self._advance(t)
+
+    def _read(self, address: int) -> int:
+        """CPU bus read: one M-cycle."""
+        if 0xFE00 <= address < 0xFF80 or 0x8000 <= address < 0xA000 or self.memory._dma_busy:
+            self._catch_up()
+        self._acc += 4
+        return self.memory.read_byte(address)
+
+    def _write(self, address: int, value: int) -> None:
+        """CPU bus write: one M-cycle."""
+        if 0xFE00 <= address < 0xFF80 or 0x8000 <= address < 0xA000 or self.memory._dma_busy:
+            self._catch_up()
+        self._acc += 4
+        self.memory.write_byte(address, value)
+
     def _idle_step(self) -> int:
         """Advance timer and PPU by one M-cycle without executing anything."""
-        self._update_timers(1)
-        self.ppu.step(4)
+        self._advance(4)
         self.total_cycles += 4
         return 4
 
@@ -500,9 +559,7 @@ class CPU(InstructionImplementations):
         # If halted, update timers and PPU (so interrupt flags can be set)
         if self.halted:
             cycles = 4  # 4 T-cycles = 1 M-cycle
-            m_cycles = cycles // 4
-            self._update_timers(m_cycles)
-            self.ppu.step(cycles)
+            self._advance(cycles)
             self.total_cycles += cycles
 
             # Then check if we should wake (after timers updated)
@@ -513,12 +570,14 @@ class CPU(InstructionImplementations):
 
             return cycles
 
+        self._acc = 0
+        self._synced = 0
+
         # Check for interrupts (only services them if IME=1)
         if self._check_interrupts():
-            cycles = 20  # Interrupt handling takes ~5 M-cycles (20 T-cycles) (simplified)
-            m_cycles = cycles // 4
-            self._update_timers(m_cycles)
-            self.ppu.step(cycles)
+            cycles = 20  # dispatch: 2 internal cycles, 2 pushes, 1 to set PC
+            self._acc = cycles
+            self._catch_up()
             self.total_cycles += cycles
             return cycles
 
@@ -549,14 +608,9 @@ class CPU(InstructionImplementations):
             if self._ei_pending == 0:
                 self.ime = True
 
-        # UPDATE
-        # Note: cycles from opcodes are in T-cycles, but _update_timers expects M-cycles
-        # 1 M-cycle = 4 T-cycles
-        m_cycles = cycles // 4
-        self._update_timers(m_cycles)
-
-        # Update PPU (PPU expects T-cycles)
-        self.ppu.step(cycles)
+        # Advance the timer, PPU and DMA through the rest of the instruction
+        self._acc = cycles
+        self._catch_up()
 
         self.total_cycles += cycles
 
@@ -617,11 +671,11 @@ class CPU(InstructionImplementations):
             value = self.registers._l
         elif source == '(HL)':
         # Read from memory at address HL
-            value = self.memory.read_byte(self.registers.hl)
+            value = self._read(self.registers.hl)
         elif source == '(BC)':
-            value = self.memory.read_byte(self.registers.bc)
+            value = self._read(self.registers.bc)
         elif source == '(DE)':
-            value = self.memory.read_byte(self.registers.de)
+            value = self._read(self.registers.de)
         else:
             raise ValueError(f"Unknown LD source: {source}")
     
@@ -650,11 +704,11 @@ class CPU(InstructionImplementations):
             self.registers._sp = validate_word(value)
         elif target == '(HL)':
         # Write to memory at address HL
-            self.memory.write_byte(self.registers.hl, validate_byte(value))
+            self._write(self.registers.hl, validate_byte(value))
         elif target == '(BC)':
-            self.memory.write_byte(self.registers.bc, validate_byte(value))
+            self._write(self.registers.bc, validate_byte(value))
         elif target == '(DE)':
-            self.memory.write_byte(self.registers.de, validate_byte(value))
+            self._write(self.registers.de, validate_byte(value))
         else:
             raise ValueError(f"Unknown LD target: {target}")
     

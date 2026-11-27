@@ -85,6 +85,15 @@ class PPU:
         self._stat_line = False     # the four STAT sources ORed together
         self._window_line = 0       # the window's own line counter
         self._wy_hit = False        # LY has reached WY this frame
+        # CPU access locks. Reads lock a few dots before STAT shows the mode;
+        # writes follow slightly different edges (mooneye lcdon_*timing tests).
+        self.oam_locked = False     # OAM reads blocked: last 4 dots of the line before, to end of mode 3
+        self.oam_write_locked = False   # OAM writes blocked: dots 0-75 and mode 3
+        self.vram_locked = False    # VRAM reads blocked: dot 76 to end of mode 3
+        self.vram_write_locked = False  # VRAM writes blocked: mode 3
+        self._first_line = False    # first line after LCD on: no OAM search, no early locks
+        self._line_ending = False   # in the last 4 dots of the line, LY already advanced
+        self._mode3_end = 252       # dot where pixel transfer ends on this line
 
     def _init_registers(self):
         """Initialize LCD registers to power-on values"""
@@ -135,6 +144,8 @@ class PPU:
         self.ly = 0
         self.cycle_counter = 0
         self._phase = self.current_mode = self.MODE_HBLANK
+        self._unlock()
+        self._line_ending = False
         d[0xFF44] = 0
         d[0xFF41] &= 0xFC
         # The frozen LY=LYC flag keeps its STAT source high (or low) while off
@@ -150,6 +161,9 @@ class PPU:
         self.cycle_counter = 0
         self._phase = self.MODE_OAM_SEARCH
         self.current_mode = self.MODE_HBLANK
+        self._first_line = True
+        self._line_ending = False
+        self._unlock()
         self._window_line = 0
         self._wy_hit = self.memory._data[0xFF4A] == 0
         self._compare_lyc()
@@ -220,31 +234,60 @@ class PPU:
             dot = self.cycle_counter
             phase = self._phase
             if phase == self.MODE_OAM_SEARCH:
+                if dot < 76:
+                    return
+                if not self._first_line and not self.vram_locked:
+                    self.vram_locked = True     # VRAM reads lock 4 dots before mode 3 shows
+                    self.oam_write_locked = False   # while OAM writes briefly pass
                 if dot < 80:
                     return
+                self._first_line = False
+                self.oam_locked = self.oam_write_locked = True
+                self.vram_locked = self.vram_write_locked = True
                 self._set_mode(self.MODE_PIXEL_TRANSFER)
-                self._render_scanline(self.ly)
+                self._mode3_end = 252 + self._render_scanline(self.ly)
             elif phase == self.MODE_PIXEL_TRANSFER:
-                if dot < 252:
+                if dot < self._mode3_end:
                     return
+                self._unlock()
                 self._set_mode(self.MODE_HBLANK)
-            elif phase == self.MODE_HBLANK:
-                if dot < 456:
-                    return
-                self._next_line()
-            else:  # VBlank
-                if self.ly == 153 and dot >= 4 and d[0xFF44] != 0:
+            else:  # HBlank or VBlank
+                if phase == self.MODE_VBLANK and self.ly == 153 and dot >= 4 and d[0xFF44] != 0:
                     # Line 153: LY reads 153 only for the first few dots, then 0
                     d[0xFF44] = 0
                     self._compare_lyc()
                     self._update_stat()
+                if dot < 452:
+                    return
+                if not self._line_ending:
+                    self._end_line()
                 if dot < 456:
                     return
                 self._next_line()
 
+    def _unlock(self):
+        self.oam_locked = self.oam_write_locked = False
+        self.vram_locked = self.vram_write_locked = False
+
+    def _end_line(self):
+        """Last 4 dots of a line: LY already shows the next line, the LY=LYC
+        flag reads 0 until the comparison runs at the new line, and OAM locks
+        if a visible line follows. From line 153 to line 0 LY stays 0, so the
+        flag (and any LYC=0 interrupt line) stays as it is."""
+        d = self.memory._data
+        self._line_ending = True
+        ly = self.ly
+        if ly < 153:
+            d[0xFF44] = ly + 1
+            d[0xFF41] &= ~0x04
+            self._update_stat()
+        if ly < 143 or ly == 153:
+            self.oam_locked = True
+
     def _next_line(self):
         d = self.memory._data
         self.cycle_counter -= 456
+        self._line_ending = False
         ly = self.ly + 1
         if ly == 154:
             ly = 0
@@ -255,6 +298,7 @@ class PPU:
         if ly < 144:
             if ly == d[0xFF4A]:
                 self._wy_hit = True
+            self.oam_write_locked = True
             self._set_mode(self.MODE_OAM_SEARCH)
         elif ly == 144:
             self._phase = self.current_mode = self.MODE_VBLANK
@@ -278,18 +322,23 @@ class PPU:
         Args:
             ly: Current scanline number (0-143)
         """
-        lcdc = self.memory._data[0xFF40]
+        d = self.memory._data
+        lcdc = d[0xFF40]
+        scx = d[0xFF43]
+        # Pixel transfer gets longer for fine X scroll, the window and sprites
+        penalty = scx & 7
 
         # Render background first
         self._render_background_scanline(ly, lcdc)
 
         # Window on top of background. On DMG, LCDC bit 0 off blanks both.
-        if lcdc & 0x21 == 0x21:
-            self._render_window_scanline(ly, lcdc)
+        if lcdc & 0x21 == 0x21 and self._render_window_scanline(ly, lcdc):
+            penalty += 6
 
         # Render sprites on top (if enabled)
         if lcdc & 0x02:  # Bit 1 = sprite enable
-            self._render_sprites_scanline(ly, lcdc)
+            penalty += self._render_sprites_scanline(ly, lcdc, scx)
+        return penalty
 
     def _tile_line_pixels(self, d, map_row: int, first_col: int, tiles: int,
                           signed: bool, tile_line: int) -> list:
@@ -364,7 +413,7 @@ class PPU:
         d = self.memory._data
         wx = d[0xFF4B]  # Window X position plus 7
         if not self._wy_hit or wx > 166:
-            return
+            return False
 
         # Window tile map: bit 6 of LCDC (0 = 0x9800, 1 = 0x9C00)
         tile_map_base = 0x9C00 if (lcdc & 0x40) else 0x9800
@@ -388,8 +437,9 @@ class PPU:
         # Window overwrites background
         self.screen_buffer[ly][x_start:] = [palette[c] for c in pixels]
         self._bg_index[x_start:] = pixels
+        return True
 
-    def _render_sprites_scanline(self, ly: int, lcdc: int):
+    def _render_sprites_scanline(self, ly: int, lcdc: int, scx: int = 0) -> int:
         """
         Render sprites for a single scanline
 
@@ -413,8 +463,23 @@ class PPU:
                 if len(found) == 10:
                     break
         if not found:
-            return
+            return 0
         found.sort()        # smaller X first, then lower OAM address
+
+        # Each fetched sprite stalls pixel transfer 6 dots, plus up to 5 more
+        # the first time its background tile is hit, depending on where in that
+        # tile it starts (Pan Docs, "Mode 3 length"). Sprites at X >= 168
+        # aren't fetched.
+        penalty = 0
+        tiles_seen = set()
+        for x_raw, _ in found:
+            if x_raw < 168:
+                pos = x_raw + (scx & 7)
+                tile = pos >> 3
+                penalty += 6
+                if tile not in tiles_seen:
+                    tiles_seen.add(tile)
+                    penalty += max(0, 5 - (pos & 7))
 
         row = self.screen_buffer[ly]
         bg = self._bg_index
@@ -446,6 +511,9 @@ class PPU:
                         taken[x] = True
                         if not (behind and bg[x]):
                             row[x] = (palette >> (c * 2)) & 0x03
+        # Calibrated against mooneye intr_2_mode0_timing_sprites (DMG data): seen
+        # at this emulator's 4-dot resolution, the stall ends 3 dots earlier.
+        return max(0, penalty - 3)
 
     def get_screen_buffer(self):
         """

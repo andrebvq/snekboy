@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0 — Timing
+
+- Each CPU memory access happens on its own cycle; the timer, PPU and
+  OAM DMA catch up before any access that can see them.
+- OAM DMA takes 160 cycles, blocks OAM, can be restarted, and reads
+  sources 0xE0-0xFF from work RAM.
+- Pixel transfer gets longer with fine scroll, the window and sprites;
+  LY and the OAM/VRAM access locks change on their hardware dots.
+- Serial transfers take 8 bits at 8192 Hz and raise the serial interrupt.
+- Joypad interrupt only for buttons in the selected group.
+
+Blargg 17 -> 26 passing (all of mem_timing), mooneye 66 -> 93. The tests
+still failing are for other models (DMG0, MGB, SGB, CGB), MBC1 multicart
+and the DMG OAM corruption bug. About 5% slower.
+
 ## 0.6.0 — Graphics (PPU)
 
 - Window keeps its own line counter, is hidden when the background is off,

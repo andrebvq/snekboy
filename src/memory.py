@@ -70,10 +70,13 @@ class Memory:
         self._read_count = 0
         self._write_count = 0
 
-        # OAM DMA state
-        self._dma_active = False
-        self._dma_cycles_remaining = 0
+        # OAM DMA state (see dma_tick)
+        self._dma_active = False      # copying; OAM reads 0xFF
+        self._dma_busy = False        # copying or about to start
+        self._dma_pos = 0
         self._dma_source = 0
+        self._dma_next_source = 0
+        self._dma_start_delay = 0
 
         # Boot ROM state
         self.boot_rom_enabled = True  # Boot ROM active until 0xFF50 write
@@ -107,13 +110,13 @@ class Memory:
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
         # BUT only when LCD is enabled (LCDC bit 7)
         # The unusable area 0xFEA0-0xFEFF follows the same lock.
+        if self._dma_active and 0xFE00 <= address <= 0xFEFF:
+            return 0xFF                  # OAM is owned by the DMA copy
         if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFEFF:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
-                    ppu_mode = self._cpu.ppu.current_mode
-                    # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
-                    if ppu_mode == 2 or ppu_mode == 3:
+                    if self._cpu.ppu.oam_locked:
                         return 0xFF  # Return 0xFF for blocked reads
 
         # Unusable area reads 0x00 on DMG when not locked.
@@ -127,8 +130,7 @@ class Memory:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
-                    ppu_mode = self._cpu.ppu.current_mode
-                    if ppu_mode == 3:  # Mode 3 = Pixel Transfer
+                    if self._cpu.ppu.vram_locked:
                         return 0xFF  # Return 0xFF for blocked reads
 
         # P1/JOYP register (0xFF00) - Joypad
@@ -177,13 +179,13 @@ class Memory:
         # Check for OAM write restrictions during PPU modes (only for CPU writes, not PPU writes)
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
         # BUT only when LCD is enabled (LCDC bit 7)
+        if self._dma_active and 0xFE00 <= address <= 0xFEFF:
+            return                       # OAM is owned by the DMA copy
         if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFE9F:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
-                    ppu_mode = self._cpu.ppu.current_mode
-                    # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
-                    if ppu_mode == 2 or ppu_mode == 3:
+                    if self._cpu.ppu.oam_write_locked:
                         return  # Ignore write
 
         # Check for VRAM write restrictions during PPU Mode 3 (only for CPU writes, not PPU writes)
@@ -193,8 +195,7 @@ class Memory:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
-                    ppu_mode = self._cpu.ppu.current_mode
-                    if ppu_mode == 3:  # Mode 3 = Pixel Transfer
+                    if self._cpu.ppu.vram_write_locked:
                         return  # Ignore write
 
         # P1/JOYP register (0xFF00) - Joypad
@@ -213,6 +214,8 @@ class Memory:
                 tac = self._data[0xFF07]
                 if tac & 0x04 and (self._cpu._system_counter >> (9, 3, 5, 7)[tac & 0x03]) & 1:
                     self._cpu._trigger_timer_tick()
+                if self._cpu._serial_bits and self._cpu._system_counter & 0x100:
+                    self._cpu._serial_shift()
                 self._cpu._system_counter = 0
             return
 
@@ -332,9 +335,14 @@ class Memory:
             self._data[address] = value
 
         elif address == 0xFF02:
-            # Serial control - if bit 7 is set, transfer starts
-            if value == 0x81:
-                # Transfer requested
+            # Serial control: bit 7 starts a transfer, bit 0 selects the internal
+            # clock. The CPU's clock then shifts 8 bits (see CPU._serial_shift);
+            # with an external clock and nothing connected it never finishes.
+            self._data[address] = value
+            if value & 0x81 == 0x81 and self._cpu:
+                self._cpu._serial_bits = 8
+            if value & 0x80:
+                # Log the byte being sent (test ROMs print through the serial port)
                 self._serial_output.append(self._serial_buffer)
 
                 # Print character (convert newline, tab, etc.)
@@ -347,10 +355,7 @@ class Memory:
                 else:
                     # Non-printable: show as hex for debugging
                     print(f'[{self._serial_buffer:02X}]', end='', flush=True)
-
-                self._data[0xFF01] = 0x00  # Clear data
-                self._data[0xFF02] = 0x01  # Mark transfer complete
-                return
+            return
 
         self._data[address] = value
     
@@ -516,37 +521,40 @@ class Memory:
         print("Boot simulation complete - VRAM cleared, all registers initialized")
 
     def _start_oam_dma(self, value: int):
+        """Request OAM DMA from (value << 8): 160 bytes into 0xFE00-0xFE9F.
+
+        The copy starts two M-cycles after the write (the write's own cycle and
+        one setup cycle) and moves one byte per M-cycle, so it takes 160
+        M-cycles. A new request while one is running restarts it; the old copy
+        keeps going until the new one starts.
         """
-        Start OAM DMA transfer
+        self._dma_next_source = value << 8
+        self._dma_start_delay = 2
+        self._dma_busy = True
 
-        Copies 160 bytes from (value << 8) to OAM (0xFE00-0xFE9F)
-        Takes 160 M-cycles (640 T-cycles) during which most memory is inaccessible
+    def _dma_read(self, address: int) -> int:
+        if address >= 0xE000:
+            address -= 0x2000         # sources 0xE0-0xFF read work RAM
+        if 0xA000 <= address < 0xC000 and self.cartridge:
+            return self.cartridge.read_ram(address)
+        return self._data[address]
 
-        For simplicity, we do an instant copy and advance cycles
-        """
-        source_addr = value << 8  # Source is XX00-XX9F
-
-        # Copy 160 bytes (0xA0) from source to OAM
-        # Bypass PPU restrictions for this direct copy
-        old_bypass = self._bypass_ppu_restrictions
-        self._bypass_ppu_restrictions = True
-
-        for i in range(0xA0):  # 160 bytes
-            if 0xA000 <= source_addr < 0xC000 and self.cartridge:
-                source_byte = self.cartridge.read_ram(source_addr + i)
-            else:
-                source_byte = self._data[source_addr + i]
-            self._data[0xFE00 + i] = source_byte
-
-        self._bypass_ppu_restrictions = old_bypass
-
-        # DMA takes 160 M-cycles (640 T-cycles)
-        # We could track this with _dma_active flag, but for now do instant transfer
-        # and just advance CPU cycles
-        if self._cpu:
-            # Add the DMA time to total cycles
-            # The CPU should essentially "stall" during DMA
-            self._cpu.total_cycles += 640
+    def dma_tick(self) -> None:
+        """Advance OAM DMA by one M-cycle (called by the CPU's clock)."""
+        if self._dma_active:
+            i = self._dma_pos
+            self._data[0xFE00 + i] = self._dma_read(self._dma_source + i)
+            i += 1
+            self._dma_pos = i
+            if i == 0xA0:
+                self._dma_active = False
+        if self._dma_start_delay:
+            self._dma_start_delay -= 1
+            if not self._dma_start_delay:
+                self._dma_active = True
+                self._dma_pos = 0
+                self._dma_source = self._dma_next_source
+        self._dma_busy = self._dma_active or self._dma_start_delay > 0
 
     def get_stats(self) -> dict:
         """Get memory access statistics"""
