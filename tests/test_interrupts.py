@@ -145,3 +145,24 @@ def test_reload_window_is_one_m_cycle():
     assert not cpu._tima_reloaded
     cpu.memory.write_byte(0xFF05, 0xFE)
     assert cpu.memory.read_byte(0xFF05) == 0xFE
+
+
+def test_fast_timer_path_matches_exact_path():
+    """The arithmetic fast path must give the same DIV/TIMA/IF as stepping
+    one M-cycle at a time, for every rate and batch size."""
+    import random
+    rng = random.Random(1)
+    for _ in range(400):
+        tac = rng.choice([0x00, 0x04, 0x05, 0x06, 0x07])
+        counter, tima, n = rng.randrange(0x10000) & ~3, rng.randrange(256), rng.randrange(1, 40)
+        results = []
+        for fast in (True, False):
+            cpu = _timer_cpu(tac)
+            cpu._system_counter = counter
+            cpu.memory._data[0xFF05] = tima
+            cpu.memory._data[0xFF0F] = 0
+            (cpu._update_timers if fast else cpu._update_timers_exact)(n)
+            d = cpu.memory._data
+            results.append((cpu._system_counter, d[0xFF04], d[0xFF05], d[0xFF0F] & 0x1F,
+                            cpu._timer_overflow_cycles, cpu._tima_reloaded))
+        assert results[0] == results[1], (tac, counter, tima, n)

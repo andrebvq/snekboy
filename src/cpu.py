@@ -352,14 +352,8 @@ class CPU(InstructionImplementations):
         if not self.ime:
             return False
 
-        # Read IE and IF registers
-        ie = self.memory.read_byte(0xFFFF)  # Interrupt Enable
-        if_flags = self.memory.read_byte(0xFF0F)  # Interrupt Flags
-
-        # Check which interrupts are both enabled and requested
-        triggered = ie & if_flags & 0x1F  # Only bits 0-4 are used
-
-        if triggered == 0:
+        d = self.memory._data
+        if not d[0xFFFF] & d[0xFF0F] & 0x1F:     # enabled and requested
             return False
 
         self._service_interrupt()
@@ -429,6 +423,33 @@ class CPU(InstructionImplementations):
             self._request_interrupt(3)
 
     def _update_timers(self, cycles: int) -> None:
+        """Advance DIV/TIMA by `cycles` M-cycles.
+
+        Fast path: with no overflow, reload or serial transfer in progress,
+        TIMA ticks are counted arithmetically (one per multiple of the
+        selected bit's period crossed). Anything that needs cycle-exact
+        handling goes through _update_timers_exact.
+        """
+        if self._timer_overflow_cycles or self._tima_reloaded or self._serial_bits:
+            self._update_timers_exact(cycles)
+            return
+        d = self.memory._data
+        old = self._system_counter
+        new = old + cycles * 4
+        tac = d[0xFF07]
+        if tac & 0x04:
+            shift = (10, 4, 6, 8)[tac & 0x03]     # selected bit + 1
+            edges = (new >> shift) - (old >> shift)
+            if edges:
+                tima = d[0xFF05] + edges
+                if tima > 0xFF:                   # overflow inside this batch
+                    self._update_timers_exact(cycles)
+                    return
+                d[0xFF05] = tima
+        self._system_counter = new & 0xFFFF
+        d[0xFF04] = (new >> 8) & 0xFF
+
+    def _update_timers_exact(self, cycles: int) -> None:
         """
         Update timer registers with cycle-accurate behavior.
 
@@ -563,9 +584,8 @@ class CPU(InstructionImplementations):
             self.total_cycles += cycles
 
             # Then check if we should wake (after timers updated)
-            ie = self.memory.read_byte(0xFFFF)
-            if_flags = self.memory.read_byte(0xFF0F)
-            if ie & if_flags & 0x1F:
+            d = self.memory._data
+            if d[0xFFFF] & d[0xFF0F] & 0x1F:
                 self.halted = False  # Wake from halt
 
             return cycles
