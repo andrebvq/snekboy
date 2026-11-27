@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — Speed
+
+- Graphics decode each 8-pixel tile row with one table lookup and read video memory directly.
+- Fast path for ROM and RAM reads; Gameboy Doctor mode checked once at start.
+- The frame is drawn to the window in one call instead of pixel by pixel.
+- Fixed: Gameboy Doctor mode no longer freezes the graphics.
+
+About 2-3x faster (Tetris 4.5 -> 9.6 fps, Super Mario Land 5.2 -> 15.9 fps).
+Output and test results are unchanged.
+
 ## 0.3.0 — Cartridge mappers
 
 - MBC1, MBC2, MBC3 (with real-time clock) and MBC5, chosen from the ROM header.
