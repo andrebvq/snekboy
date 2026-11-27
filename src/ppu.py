@@ -278,8 +278,8 @@ class PPU:
         tile_map_base = 0x9C00 if (lcdc & 0x08) else 0x9800
 
         # Background tile data: bit 4 of LCDC
-        # 0 = 0x8800-0x97FF (signed addressing), 1 = 0x8000-0x8FFF (unsigned)
-        tile_data_base = 0x8000 if (lcdc & 0x10) else 0x8800
+        # 0 = signed tile numbers from base 0x9000 (0x8800-0x97FF), 1 = unsigned from 0x8000
+        tile_data_base = 0x8000 if (lcdc & 0x10) else 0x9000
         use_signed = not (lcdc & 0x10)
 
         # Calculate which row of the 256x256 background we're on
@@ -362,7 +362,7 @@ class PPU:
         tile_map_base = 0x9C00 if (lcdc & 0x40) else 0x9800
 
         # Window uses same tile data as background (bit 4 of LCDC)
-        tile_data_base = 0x8000 if (lcdc & 0x10) else 0x8800
+        tile_data_base = 0x8000 if (lcdc & 0x10) else 0x9000
         use_signed = not (lcdc & 0x10)
 
         # Window internal line counter (which line of window we're rendering)

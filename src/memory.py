@@ -18,6 +18,7 @@ Memory Map:
 from typing import Optional
 from src.utils import validate_byte, validate_word, MemoryRanges
 from src.joypad import Joypad
+from src.cartridge import make_cartridge
 from src.gameboy_doctor import should_override_ly_register, get_overridden_ly_value  # Gameboy Doctor integration
 
 # Bits that always read as 1 for each I/O register 0xFF00-0xFF7F on DMG
@@ -77,6 +78,7 @@ class Memory:
         # Boot ROM state
         self.boot_rom_enabled = True  # Boot ROM active until 0xFF50 write
         self.cartridge_data = None  # Will store full cartridge ROM
+        self.cartridge = None  # Memory bank controller, set by load_rom
     
     def read_byte(self, address: int) -> int:
         """Read a single byte from memory"""
@@ -90,6 +92,10 @@ class Memory:
             if self.cartridge_data and address < len(self.cartridge_data):
                 return self.cartridge_data[address]
             return self._data[address]
+
+        # Cartridge RAM (0xA000-0xBFFF) goes through the memory bank controller
+        if 0xA000 <= address <= 0xBFFF and self.cartridge:
+            return self.cartridge.read_ram(address)
 
         # Check for OAM access restrictions during PPU modes (only for CPU reads, not PPU reads)
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
@@ -143,9 +149,15 @@ class Memory:
         address = validate_word(address)
         value = validate_byte(value)
 
-        # ROM (0x0000-0x7FFF) is read-only. Games write here to talk to a
-        # cartridge mapper (MBC); with no mapper the write has no effect.
+        # ROM (0x0000-0x7FFF) is read-only. Writes here set cartridge
+        # mapper (MBC) registers, e.g. to switch ROM banks.
         if address < 0x8000:
+            if self.cartridge and self.cartridge.write_rom(address, value):
+                self._map_rom()
+            return
+
+        if 0xA000 <= address <= 0xBFFF and self.cartridge:
+            self.cartridge.write_ram(address, value)
             return
 
         # Echo RAM (0xE000-0xFDFF) is the same memory as 0xC000-0xDDFF.
@@ -250,9 +262,7 @@ class Memory:
         if address == 0xFF50:
             if value & 0x01 and self.boot_rom_enabled:
                 self.boot_rom_enabled = False
-                if self.cartridge_data:
-                    for i in range(min(0x100, len(self.cartridge_data))):
-                        self._data[i] = self.cartridge_data[i]
+                self._map_rom()
             return
 
         # Unused I/O registers - ignore writes
@@ -353,26 +363,27 @@ class Memory:
         self.write_byte(address + 1, high_byte)
     
     def load_rom(self, rom_data: bytes, offset: int = 0) -> None:
-        """Load ROM data into memory at specified offset"""
-        # Save cartridge data for boot ROM handling
-        if offset == 0:
-            self.cartridge_data = bytearray(rom_data)
-
-        length = min(len(rom_data), 65536 - offset)
-
-        # If boot ROM is enabled, only load from 0x0100 onwards
-        # The boot ROM occupies 0x0000-0x00FF
-        if self.boot_rom_enabled and offset == 0:
-            # Load cartridge from 0x0100 onwards
-            if length > 0x0100:
-                self._data[0x0100:length] = rom_data[0x0100:length]
-                print(f"Loaded {length} bytes of ROM (boot ROM active, cartridge starts at 0x0100)")
-            else:
-                print(f"ROM too small ({length} bytes)")
-        else:
+        """Load a cartridge ROM (offset 0) or raw bytes at another address."""
+        if offset != 0:
+            length = min(len(rom_data), 65536 - offset)
             self._data[offset:offset + length] = rom_data[:length]
-            print(f"Loaded {length} bytes of ROM at address 0x{offset:04X}")
-    
+            return
+
+        self.cartridge = make_cartridge(rom_data)
+        self.cartridge_data = self.cartridge.rom
+        self._map_rom()
+        print(f"Loaded {len(rom_data)} bytes of ROM ({self.cartridge.name}, "
+              f"{self.cartridge.rom_banks} ROM banks, {len(self.cartridge.ram)} bytes RAM)")
+
+    def _map_rom(self) -> None:
+        """Copy the cartridge's currently selected ROM banks into 0x0000-0x7FFF."""
+        cart = self.cartridge
+        if not cart:
+            return
+        b0, bn = cart.bank0 * 0x4000, cart.bankn * 0x4000
+        self._data[0x0000:0x4000] = cart.rom[b0:b0 + 0x4000]
+        self._data[0x4000:0x8000] = cart.rom[bn:bn + 0x4000]
+
     def load_rom_file(self, filepath: str) -> None:
         """Load a ROM file from disk"""
         with open(filepath, 'rb') as f:
@@ -462,9 +473,7 @@ class Memory:
 
         # Disable boot ROM and map cartridge
         self.boot_rom_enabled = False
-        if self.cartridge_data:
-            for i in range(min(0x100, len(self.cartridge_data))):
-                self._data[i] = self.cartridge_data[i]
+        self._map_rom()
 
         # Set FF50 to indicate boot complete
         self._data[0xFF50] = 0x01
@@ -488,7 +497,10 @@ class Memory:
         self._bypass_ppu_restrictions = True
 
         for i in range(0xA0):  # 160 bytes
-            source_byte = self._data[source_addr + i]
+            if 0xA000 <= source_addr < 0xC000 and self.cartridge:
+                source_byte = self.cartridge.read_ram(source_addr + i)
+            else:
+                source_byte = self._data[source_addr + i]
             self._data[0xFE00 + i] = source_byte
 
         self._bypass_ppu_restrictions = old_bypass
