@@ -39,6 +39,12 @@ class CPU(InstructionImplementations):
         self._halt_bug_active = False  # HALT bug: skip next PC increment
         self._acc = 0      # T-cycles started in the current instruction
         self._synced = 0   # T-cycles the timer/PPU/DMA have been advanced to
+        # Lazy sync (frame runner only, see run_until_cycle): cycles owed to the
+        # timer/PPU from earlier instructions, and how many may be owed before
+        # the next event that could raise an interrupt.
+        self._lazy = False
+        self._lag = 0
+        self._budget = 0
         self.locked = False  # Set by an illegal opcode; the CPU stops until reset
         self.stopped = False  # STOP mode: CPU and timer frozen until a button is pressed
 
@@ -310,6 +316,47 @@ class CPU(InstructionImplementations):
         if t > 0:
             self._synced = self._acc
             self._advance(t)
+            self._budget -= t           # lazy sync: an event passed -> recompute
+            if self._budget <= 0:
+                self._budget = self._sync_budget()
+
+    def _sync_budget(self) -> int:
+        """T-cycles the timer/PPU may fall behind before something could raise
+        an interrupt: up to the next PPU event or the TIMA overflow edge. Zero
+        (sync after every instruction) while DMA, a serial transfer or a TIMA
+        overflow/reload is in progress."""
+        if (self.memory._dma_busy or self._serial_bits or self._timer_overflow_cycles
+                or self._tima_reloaded):
+            return 0
+        budget = 1 << 30
+        dots = self.ppu.dots_to_next_event()
+        if dots is not None:
+            budget = dots
+        d = self.memory._data
+        tac = d[0xFF07]
+        if tac & 0x04:
+            shift = (10, 4, 6, 8)[tac & 0x03]                 # selected bit + 1
+            c = self._system_counter
+            overflow_at = ((c >> shift) + 256 - d[0xFF05]) << shift
+            budget = min(budget, ((overflow_at - c + 3) >> 2) << 2)
+        return budget
+
+    def _settle_owed(self) -> None:
+        """Inside an instruction: pay back cycles owed from earlier
+        instructions (a negative _synced), as if synced at its start."""
+        if self._synced < 0:
+            t = -self._synced
+            self._synced = 0
+            self._advance(t)
+            self._budget = 0
+
+    def _settle_lag(self) -> None:
+        """Pay back cycles owed from earlier instructions (lazy sync)."""
+        if self._lag:
+            t = self._lag
+            self._lag = 0
+            self._advance(t)
+            self._budget = 0
 
     def _read(self, address: int) -> int:
         """CPU bus read: one M-cycle."""
@@ -331,12 +378,18 @@ class CPU(InstructionImplementations):
         """CPU bus write: one M-cycle."""
         if 0xFE00 <= address < 0xFF80 or 0x8000 <= address < 0xA000 or self.memory._dma_busy:
             self._catch_up()
+            self._acc += 4
+            self.memory.write_byte(address, value)
+            if address >= 0xFF00:
+                self._budget = 0        # timer/LCD registers may move the next event
+            return
         self._acc += 4
         self.memory.write_byte(address, value)
 
     def _idle_step(self) -> int:
         """Advance timer and PPU by one M-cycle without executing anything."""
         self._advance(4)
+        self._budget = 0
         self.total_cycles += 4
         return 4
 
@@ -346,6 +399,9 @@ class CPU(InstructionImplementations):
         deadline: total_cycles value the caller runs to. When given, a halted
         CPU may skip ahead to the next event instead of idling one M-cycle per
         call (see _halt_skip); without it, behaviour is unchanged."""
+        if self._lag and (self.locked or self.stopped or self.halted):
+            self._settle_lag()
+
         if self.locked:
             return self._idle_step()
 
@@ -356,6 +412,7 @@ class CPU(InstructionImplementations):
             else:
                 self.ppu.step(4)
                 self.total_cycles += 4
+                self._budget = 0
                 return 4
 
         # If halted, update timers and PPU (so interrupt flags can be set)
@@ -368,6 +425,7 @@ class CPU(InstructionImplementations):
                 self._update_timers(m)
                 self.ppu.step(cycles)
             self.total_cycles += cycles
+            self._budget = 0            # lazy sync: recompute after this stretch
 
             # Then check if we should wake (after timers updated)
             d = self.memory._data
@@ -376,8 +434,11 @@ class CPU(InstructionImplementations):
 
             return cycles
 
+        # Cycles still owed from earlier instructions count as not yet synced,
+        # so any catch-up in this instruction pays them back first.
         self._acc = 0
-        self._synced = 0
+        self._synced = -self._lag
+        self._lag = 0
 
         # Check for interrupts (only services them if IME=1)
         if self._check_interrupts():
@@ -393,6 +454,7 @@ class CPU(InstructionImplementations):
         # Illegal opcodes hang the real CPU: it stops executing for good,
         # while the timer and PPU keep running.
         if opcode in ILLEGAL_OPCODES:
+            self._settle_owed()
             self.locked = True
             print(f"CPU locked: illegal opcode 0x{opcode:02X} at 0x{(self.registers._pc - 1) & 0xFFFF:04X}")
             return self._idle_step()
@@ -427,12 +489,19 @@ class CPU(InstructionImplementations):
             if self._ei_pending == 0:
                 self.ime = True
 
-        # Advance the timer, PPU and DMA through the rest of the instruction
+        # Advance the timer, PPU and DMA through the rest of the instruction.
+        # In the frame runner this is deferred while no event can be reached.
         self._acc = cycles
         t = cycles - self._synced
-        if t > 0:
+        if self._lazy and t < self._budget:
+            self._lag = t
+        elif t > 0:
             self._synced = cycles
             self._advance(t)
+            if self._lazy:
+                self._budget -= t
+                if self._budget <= 0:
+                    self._budget = self._sync_budget()
 
         self.total_cycles += cycles
 
@@ -465,10 +534,20 @@ class CPU(InstructionImplementations):
         return m if m > 1 else 1
 
     def run_until_cycle(self, target: int) -> None:
-        """Run until total_cycles reaches target (the usual frame loop), letting
-        HALT skip ahead without passing target."""
-        while self.total_cycles < target:
-            self.step(target)
+        """Run until total_cycles reaches target (the usual frame loop).
+
+        HALT may skip ahead without passing target, and the timer/PPU are only
+        brought up to date when something could observe them: an I/O, VRAM or
+        OAM access, an event that could raise an interrupt, or the end of the
+        run. Everything is in sync again when this returns."""
+        self._lazy = self._doctor_logger is None
+        self._budget = 0
+        try:
+            while self.total_cycles < target:
+                self.step(target)
+        finally:
+            self._settle_lag()
+            self._lazy = False
 
     def run_until(self, max_cycles: int) -> None:
         """Run CPU for a specified number of cycles"""
@@ -602,6 +681,7 @@ class CPU(InstructionImplementations):
     def _execute_stop(self) -> None:
         # DMG STOP: reset DIV and freeze CPU and timer until a button is pressed.
         # (KEY1 speed switching exists only on Game Boy Color.)
+        self._settle_owed()                     # lazy sync: earlier instructions first
         self._system_counter = 0
         self.memory._data[0xFF04] = 0
         if self.memory.joypad.read_p1() & 0x0F == 0x0F:
