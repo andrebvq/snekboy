@@ -6,6 +6,7 @@ Renders the PPU screen buffer to a window
 
 import pygame
 import sys
+from src.version import __version__
 from itertools import chain
 
 class Display:
@@ -26,7 +27,7 @@ class Display:
         (15, 56, 15),     # 3: Darkest (black)
     ]
 
-    def __init__(self, title="SnekBoy Emulator"):
+    def __init__(self, title=f"SnekBoy v{__version__}"):
         """
         Initialize pygame display
 

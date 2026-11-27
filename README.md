@@ -1,4 +1,4 @@
-# SnekBoy v0.1
+# SnekBoy
 
 A Game Boy (DMG) emulator written in Python, implementing the complete Sharp LR35902 CPU instruction set and core hardware components.
 
