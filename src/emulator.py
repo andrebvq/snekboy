@@ -127,36 +127,38 @@ class Emulator:
         print("Controls:")
         print("  A/B/Start/Select: A, S, Z, X")
         print("  D-Pad (Up/Down/Left/Right): I, K, J, L")
+        print("  Palette: P (green / classic / grey)")
         print("  Quit: ESC")
         print()
 
         # Track VBlank for logging
         last_if = self.cpu.memory._data[0xFF0F] if hasattr(self.cpu.memory, '_data') else 0
 
+        frame_end = self.cpu.total_cycles
         while self.running:
             # Handle events (keyboard, quit, etc.) and update joypad
             if not self.display.handle_events(self.cpu.memory.joypad):
                 self.running = False
                 break
 
-            # Run CPU for one frame worth of cycles
-            cycles_this_frame = 0
-            while cycles_this_frame < self.CYCLES_PER_FRAME:
-                try:
-                    cycles = self.cpu.step()
-                    cycles_this_frame += cycles
-                except NotImplementedError as e:
-                    print(f"\nError: Unimplemented instruction: {e}")
-                    print(f"PC: 0x{self.cpu.registers._pc:04X}")
-                    print(f"Total cycles: {self.cpu.total_cycles:,}")
-                    self.running = False
-                    break
-                except Exception as e:
-                    print(f"\nError: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    self.running = False
-                    break
+            # Run CPU for one frame worth of cycles. The frame end is a fixed
+            # cycle count, so cycles the last instruction ran past it count
+            # towards the next frame instead of being dropped.
+            frame_end += self.CYCLES_PER_FRAME
+            try:
+                self.cpu.run_until_cycle(frame_end)
+            except NotImplementedError as e:
+                print(f"\nError: Unimplemented instruction: {e}")
+                print(f"PC: 0x{self.cpu.registers._pc:04X}")
+                print(f"Total cycles: {self.cpu.total_cycles:,}")
+                self.running = False
+                break
+            except Exception as e:
+                print(f"\nError: {e}")
+                import traceback
+                traceback.print_exc()
+                self.running = False
+                break
 
             # Render frame
             screen_buffer = self.cpu.ppu.get_screen_buffer()

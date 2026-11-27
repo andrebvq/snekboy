@@ -340,8 +340,12 @@ class CPU(InstructionImplementations):
         self.total_cycles += 4
         return 4
 
-    def step(self) -> int:
-        """Execute one instruction"""
+    def step(self, deadline=None) -> int:
+        """Execute one instruction (or one halted stretch).
+
+        deadline: total_cycles value the caller runs to. When given, a halted
+        CPU may skip ahead to the next event instead of idling one M-cycle per
+        call (see _halt_skip); without it, behaviour is unchanged."""
         if self.locked:
             return self._idle_step()
 
@@ -356,12 +360,13 @@ class CPU(InstructionImplementations):
 
         # If halted, update timers and PPU (so interrupt flags can be set)
         if self.halted:
-            cycles = 4  # 4 T-cycles = 1 M-cycle
+            m = self._halt_skip(deadline) if deadline is not None else 1
+            cycles = 4 * m
             if self.memory._dma_busy:
                 self._advance(cycles)
-            else:                       # same as _advance(4), one call less
-                self._update_timers(1)
-                self.ppu.step(4)
+            else:                       # same as _advance, one call less
+                self._update_timers(m)
+                self.ppu.step(cycles)
             self.total_cycles += cycles
 
             # Then check if we should wake (after timers updated)
@@ -437,6 +442,34 @@ class CPU(InstructionImplementations):
 
         return cycles
     
+    def _halt_skip(self, deadline: int) -> int:
+        """M-cycles a halted CPU can advance in one go with the same result as
+        stepping one M-cycle at a time: up to the next PPU event, the M-cycle
+        where TIMA overflows, or the deadline, whichever comes first. While
+        DMA, a serial transfer or a TIMA reload is in progress, or an
+        interrupt is already pending, it stays at 1."""
+        d = self.memory._data
+        if (self.memory._dma_busy or self._serial_bits or self._timer_overflow_cycles
+                or self._tima_reloaded or d[0xFFFF] & d[0xFF0F] & 0x1F):
+            return 1
+        m = (deadline - self.total_cycles + 3) >> 2          # M-cycles left to the deadline
+        dots = self.ppu.dots_to_next_event()
+        if dots is not None:
+            m = min(m, (dots + 3) >> 2)
+        tac = d[0xFF07]
+        if tac & 0x04:
+            shift = (10, 4, 6, 8)[tac & 0x03]                 # selected bit + 1
+            c = self._system_counter
+            overflow_at = ((c >> shift) + 256 - d[0xFF05]) << shift
+            m = min(m, (overflow_at - c + 3) >> 2)
+        return m if m > 1 else 1
+
+    def run_until_cycle(self, target: int) -> None:
+        """Run until total_cycles reaches target (the usual frame loop), letting
+        HALT skip ahead without passing target."""
+        while self.total_cycles < target:
+            self.step(target)
+
     def run_until(self, max_cycles: int) -> None:
         """Run CPU for a specified number of cycles"""
         target_cycles = self.total_cycles + max_cycles
