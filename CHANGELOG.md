@@ -2,7 +2,7 @@
 
 All notable changes to SnekBoy, newest first. Each release is one merged pull
 request with a matching git tag. The [Developer's Logbook](docs/developer_logbook.html)
-explains every release in depth: what was wrong, how it was found, and why each
+explains every release in depth: what was wrong, how it was diagnosed, and why each
 fix is correct.
 
 Test counts: Blargg = 33 non-sound ROMs, mooneye = 111 ROMs, unit tests = pytest.
@@ -157,7 +157,8 @@ Tests: Blargg 16/33 non-sound ROMs pass (was 15), mooneye 28/111 (was 24).
 
 ## 0.1.0 — First working version
 
-The starting point, before the audit that drove 0.2 onwards.
+The first milestone: the emulator boots and runs games. A full code review at
+this point set the work for 0.2 onwards.
 
 - All 245 defined opcodes and 256 CB opcodes, with flags and instruction
   timing; background, window and sprite rendering; timer, interrupts,
