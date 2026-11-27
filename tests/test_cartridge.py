@@ -33,6 +33,11 @@ def test_header_selects_mapper():
     assert make_cartridge(_rom(0x1B, 4, 0x03)).name == "MBC5"
 
 
+def test_ram_type_with_size_zero_gets_8kb():
+    assert len(make_cartridge(_rom(0x02, 2, 0x00)).ram) == 0x2000
+    assert len(make_cartridge(_rom(0x01, 2, 0x00)).ram) == 0     # MBC1 without RAM
+
+
 def test_mbc1_rom_banking():
     mem = _mem(_rom(0x01, 128))           # 2 MB
     assert _bank_at_4000(mem) == 1

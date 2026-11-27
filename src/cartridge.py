@@ -314,6 +314,10 @@ def make_cartridge(rom: bytes) -> Cartridge:
     """Create the right cartridge for a ROM from its header (0x0147 type, 0x0149 RAM size)."""
     kind = rom[0x147] if len(rom) > 0x149 else 0x00
     ram = RAM_SIZES.get(rom[0x149], 0) if len(rom) > 0x149 else 0
+    # Some ROMs (e.g. Blargg's halt_bug) declare a RAM cartridge type but RAM
+    # size 0; like other emulators, give them 8 KB.
+    if ram == 0 and kind in (0x02, 0x03, 0x08, 0x09, 0x10, 0x12, 0x13, 0x1A, 0x1B, 0x1D, 0x1E):
+        ram = 0x2000
 
     if kind == 0x00:
         return Cartridge(rom)
