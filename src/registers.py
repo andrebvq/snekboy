@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from src.utils import BitField, validate_byte, validate_word
+from src.utils import validate_byte, validate_word
 
 class FlagBit(Enum):
     """CPU flag bit positions"""
@@ -9,50 +9,55 @@ class FlagBit(Enum):
     HALF_CARRY = 5 # Set when carry from bit 3 to 4 occurred
     CARRY = 4      # Set when carry occurred or req. for rotates
 
+Z_FLAG, N_FLAG, H_FLAG, C_FLAG = 0x80, 0x40, 0x20, 0x10
+
+
 class Flags:
-    """Class to manage CPU flags using BitField"""
+    """The F register. `f` holds the byte; the properties read and write one
+    flag each with plain bit operations (no helper calls on the hot path)."""
+    __slots__ = ('f',)
+
     def __init__(self):
-        self._bits = BitField()
+        self.f = 0
 
     @property
     def zero(self) -> bool:
-        return self._bits.get_bit(FlagBit.ZERO.value)
-    
+        return self.f & 0x80 != 0
+
     @zero.setter
     def zero(self, value: bool) -> None:
-        self._bits.modify_bit(FlagBit.ZERO.value, value)
+        self.f = (self.f | 0x80) if value else (self.f & 0x7F)
 
     @property
     def subtract(self) -> bool:
-        return self._bits.get_bit(FlagBit.SUBTRACT.value)
-    
+        return self.f & 0x40 != 0
+
     @subtract.setter
     def subtract(self, value: bool) -> None:
-        self._bits.modify_bit(FlagBit.SUBTRACT.value, value)
+        self.f = (self.f | 0x40) if value else (self.f & 0xBF)
 
     @property
     def half_carry(self) -> bool:
-        return self._bits.get_bit(FlagBit.HALF_CARRY.value)
-    
+        return self.f & 0x20 != 0
+
     @half_carry.setter
     def half_carry(self, value: bool) -> None:
-        self._bits.modify_bit(FlagBit.HALF_CARRY.value, value)
+        self.f = (self.f | 0x20) if value else (self.f & 0xDF)
 
     @property
     def carry(self) -> bool:
-        return self._bits.get_bit(FlagBit.CARRY.value)
-    
+        return self.f & 0x10 != 0
+
     @carry.setter
     def carry(self, value: bool) -> None:
-        self._bits.modify_bit(FlagBit.CARRY.value, value)
+        self.f = (self.f | 0x10) if value else (self.f & 0xEF)
 
     def to_byte(self) -> int:
-        return self._bits.value
+        return self.f
 
     def from_byte(self, value: int) -> None:
-        # Game Boy F register: only upper 4 bits are used (bits 7-4)
-        # Lower 4 bits (3-0) are always 0
-        self._bits = BitField(validate_byte(value) & 0xF0)
+        # Only bits 7-4 exist; bits 3-0 always read 0
+        self.f = validate_byte(value) & 0xF0
 
     def __str__(self) -> str:
         return (f"Z:{int(self.zero)} "

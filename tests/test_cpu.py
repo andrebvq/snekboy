@@ -122,3 +122,31 @@ if __name__ == "__main__":
     test_multiple_instructions()
     test_run_until()
     print("\n✓ All CPU loop tests passed!")
+
+
+def test_dispatch_table_matches_decoder():
+    """The start-up opcode table must give, for every opcode and operand,
+    the same instruction, target, immediate and cycles as the decoder."""
+    from src.cpu import ILLEGAL_OPCODES
+    from src.cpu_decoder import decode_instruction_params, decode_cb_instruction, InstructionType
+    from src.opcodes import OPCODES
+    cpu = CPU(_mem_with_program([0x00]))
+    for opcode in OPCODES:
+        if opcode in ILLEGAL_OPCODES or opcode == 0xCB:
+            continue
+        for lo, hi in ((0x34, 0x12), (0xFF, 0x80), (0x00, 0x00)):
+            want = decode_instruction_params(opcode, lambda: lo, lambda: lo | hi << 8)
+            fn, target, imm, operand, slot, cycles = cpu._ops[opcode]
+            value = {1: lo, 2: lo | hi << 8}.get(operand)
+            if slot == 1:
+                target = value
+            elif slot == 2:
+                imm = value
+            assert (cpu._op_types[opcode], target, imm) == want, hex(opcode)
+            assert cycles == OPCODES[opcode][2]
+    for cb in range(256):
+        instr_type, target, imm = decode_cb_instruction(cb)
+        _, t, i, cycles = cpu._cb_ops[cb]
+        assert (cpu._op_types[('CB', cb)], t, i) == (instr_type, target, imm)
+        want_cycles = 8 if target != '(HL)' else 12 if instr_type == InstructionType.BIT else 16
+        assert cycles == want_cycles, hex(cb)

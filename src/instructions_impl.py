@@ -8,6 +8,8 @@ Separated from cpu.py for better organization.
 from src.utils import validate_byte, validate_word
 
 
+_REGISTER_ATTR = {'A': '_a', 'B': '_b', 'C': '_c', 'D': '_d', 'E': '_e', 'H': '_h', 'L': '_l'}
+
 class InstructionImplementations:
     """Mixin class containing all instruction implementations"""
 
@@ -623,36 +625,15 @@ class InstructionImplementations:
 
     def _get_register_value(self, register):
         """Get value from 8-bit register"""
-        register_map = {
-            'A': self.registers._a,
-            'B': self.registers._b,
-            'C': self.registers._c,
-            'D': self.registers._d,
-            'E': self.registers._e,
-            'H': self.registers._h,
-            'L': self.registers._l,
-        }
-        return register_map.get(register, 0)
+        attr = _REGISTER_ATTR.get(register)
+        return getattr(self.registers, attr) if attr else 0
 
     def _set_register_value(self, register, value):
         """Set value to 8-bit register"""
-        value = validate_byte(value)
-        if register == 'A':
-            self.registers._a = value
-        elif register == 'B':
-            self.registers._b = value
-        elif register == 'C':
-            self.registers._c = value
-        elif register == 'D':
-            self.registers._d = value
-        elif register == 'E':
-            self.registers._e = value
-        elif register == 'H':
-            self.registers._h = value
-        elif register == 'L':
-            self.registers._l = value
-        else:
+        attr = _REGISTER_ATTR.get(register)
+        if attr is None:
             raise ValueError(f"Unknown register: {register}")
+        setattr(self.registers, attr, value & 0xFF)
 
     # === CB-PREFIXED INSTRUCTIONS ===
 
