@@ -124,7 +124,7 @@ class InstructionImplementations:
         """INC - Increment register or memory"""
         # Get current value
         if target == '(HL)':
-            value = self.memory.read_byte(self.registers.hl)
+            value = self._read(self.registers.hl)
         else:
             value = self._get_register_value(target)
 
@@ -138,7 +138,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -146,7 +146,7 @@ class InstructionImplementations:
         """DEC - Decrement register or memory"""
         # Get current value
         if target == '(HL)':
-            value = self.memory.read_byte(self.registers.hl)
+            value = self._read(self.registers.hl)
         else:
             value = self._get_register_value(target)
 
@@ -160,7 +160,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -178,18 +178,19 @@ class InstructionImplementations:
         else:
             raise ValueError(f"Unknown register pair for PUSH: {register_pair}")
 
-        # Push onto stack (SP decrements)
+        # Push onto stack (SP decrements); one internal cycle comes first
+        self._acc += 4
         self.registers._sp = validate_word(self.registers._sp - 1)
-        self.memory.write_byte(self.registers._sp, (value >> 8) & 0xFF)  # High byte
+        self._write(self.registers._sp, (value >> 8) & 0xFF)  # High byte
         self.registers._sp = validate_word(self.registers._sp - 1)
-        self.memory.write_byte(self.registers._sp, value & 0xFF)  # Low byte
+        self._write(self.registers._sp, value & 0xFF)  # Low byte
 
     def _execute_pop(self, register_pair) -> None:
         """POP - Pop 16-bit value from stack into register"""
         # Pop from stack (SP increments)
-        low_byte = self.memory.read_byte(self.registers._sp)
+        low_byte = self._read(self.registers._sp)
         self.registers._sp = validate_word(self.registers._sp + 1)
-        high_byte = self.memory.read_byte(self.registers._sp)
+        high_byte = self._read(self.registers._sp)
         self.registers._sp = validate_word(self.registers._sp + 1)
 
         value = (high_byte << 8) | low_byte
@@ -271,11 +272,12 @@ class InstructionImplementations:
         should_call = self._check_condition(condition)
 
         if should_call:
-            # Push current PC onto stack
+            # Push current PC onto stack, after one internal cycle
+            self._acc += 4
             self.registers._sp = validate_word(self.registers._sp - 1)
-            self.memory.write_byte(self.registers._sp, (self.registers._pc >> 8) & 0xFF)
+            self._write(self.registers._sp, (self.registers._pc >> 8) & 0xFF)
             self.registers._sp = validate_word(self.registers._sp - 1)
-            self.memory.write_byte(self.registers._sp, self.registers._pc & 0xFF)
+            self._write(self.registers._sp, self.registers._pc & 0xFF)
 
             # Jump to address
             self.registers._pc = validate_word(address)
@@ -295,12 +297,14 @@ class InstructionImplementations:
             - Conditional RET not taken: 8 cycles
         """
         should_ret = self._check_condition(condition)
+        if condition is not None:
+            self._acc += 4      # RET cc spends a cycle on the condition before popping
 
         if should_ret:
             # Pop PC from stack
-            low = self.memory.read_byte(self.registers._sp)
+            low = self._read(self.registers._sp)
             self.registers._sp = validate_word(self.registers._sp + 1)
-            high = self.memory.read_byte(self.registers._sp)
+            high = self._read(self.registers._sp)
             self.registers._sp = validate_word(self.registers._sp + 1)
 
             self.registers._pc = (high << 8) | low
@@ -416,10 +420,10 @@ class InstructionImplementations:
     def _execute_ldi(self, target, source) -> None:
         """LDI - Load and increment HL"""
         if target == '(HL)' and source == 'A':
-            self.memory.write_byte(self.registers.hl, self.registers._a)
+            self._write(self.registers.hl, self.registers._a)
             self.registers.hl = validate_word(self.registers.hl + 1)
         elif target == 'A' and source == '(HL)':
-            self.registers._a = self.memory.read_byte(self.registers.hl)
+            self.registers._a = self._read(self.registers.hl)
             self.registers.hl = validate_word(self.registers.hl + 1)
         else:
             raise ValueError(f"Unknown LDI operands: {target}, {source}")
@@ -427,10 +431,10 @@ class InstructionImplementations:
     def _execute_ldd(self, target, source) -> None:
         """LDD - Load and decrement HL"""
         if target == '(HL)' and source == 'A':
-            self.memory.write_byte(self.registers.hl, self.registers._a)
+            self._write(self.registers.hl, self.registers._a)
             self.registers.hl = validate_word(self.registers.hl - 1)
         elif target == 'A' and source == '(HL)':
-            self.registers._a = self.memory.read_byte(self.registers.hl)
+            self.registers._a = self._read(self.registers.hl)
             self.registers.hl = validate_word(self.registers.hl - 1)
         else:
             raise ValueError(f"Unknown LDD operands: {target}, {source}")
@@ -441,36 +445,36 @@ class InstructionImplementations:
             # LDH (n),A - Store A at 0xFF00 + n
             offset = source if isinstance(source, int) else 0
             address = 0xFF00 + offset
-            self.memory.write_byte(address, self.registers._a)
+            self._write(address, self.registers._a)
         elif source == '(n)':
             # LDH A,(n) - Load from 0xFF00 + n into A
             offset = target if isinstance(target, int) else 0
             address = 0xFF00 + offset
-            self.registers._a = self.memory.read_byte(address)
+            self.registers._a = self._read(address)
         elif target == '(C)':
             # LDH (C),A - Store A at 0xFF00 + C
             address = 0xFF00 + self.registers._c
-            self.memory.write_byte(address, self.registers._a)
+            self._write(address, self.registers._a)
         elif source == '(C)':
             # LDH A,(C) - Load from 0xFF00 + C into A
             address = 0xFF00 + self.registers._c
-            self.registers._a = self.memory.read_byte(address)
+            self.registers._a = self._read(address)
 
     def _execute_ld_addr(self, target, source) -> None:
         """LD (nn),A / LD A,(nn) - Load to/from absolute address"""
         if target == 'A':
             # LD A,(nn) - Load from address into A
             address = source if isinstance(source, int) else 0
-            self.registers._a = self.memory.read_byte(address)
+            self.registers._a = self._read(address)
         else:
             # LD (nn),A - Store A at address
             address = target if isinstance(target, int) else 0
-            self.memory.write_byte(address, self.registers._a)
+            self._write(address, self.registers._a)
 
     def _execute_ld_nn_sp(self, address) -> None:
         """LD (nn),SP - Store SP at address (little-endian)"""
-        self.memory.write_byte(address, self.registers._sp & 0xFF)
-        self.memory.write_byte(address + 1, (self.registers._sp >> 8) & 0xFF)
+        self._write(address, self.registers._sp & 0xFF)
+        self._write(address + 1, (self.registers._sp >> 8) & 0xFF)
 
     def _execute_add_sp_n(self, offset) -> None:
         """ADD SP,n - Add signed byte to SP"""
@@ -559,9 +563,9 @@ class InstructionImplementations:
     def _execute_reti(self) -> None:
         """RETI - Return from interrupt (same as RET but also enables interrupts)"""
         # Pop PC from stack
-        low = self.memory.read_byte(self.registers._sp)
+        low = self._read(self.registers._sp)
         self.registers._sp = validate_word(self.registers._sp + 1)
-        high = self.memory.read_byte(self.registers._sp)
+        high = self._read(self.registers._sp)
         self.registers._sp = validate_word(self.registers._sp + 1)
 
         self.registers._pc = (high << 8) | low
@@ -573,11 +577,12 @@ class InstructionImplementations:
 
     def _execute_rst(self, vector) -> None:
         """RST - Restart (call to fixed address)"""
-        # Push current PC onto stack
+        # Push current PC onto stack, after one internal cycle
+        self._acc += 4
         self.registers._sp = validate_word(self.registers._sp - 1)
-        self.memory.write_byte(self.registers._sp, (self.registers._pc >> 8) & 0xFF)
+        self._write(self.registers._sp, (self.registers._pc >> 8) & 0xFF)
         self.registers._sp = validate_word(self.registers._sp - 1)
-        self.memory.write_byte(self.registers._sp, self.registers._pc & 0xFF)
+        self._write(self.registers._sp, self.registers._pc & 0xFF)
 
         # Jump to vector
         self.registers._pc = validate_word(vector)
@@ -608,11 +613,11 @@ class InstructionImplementations:
         elif immediate_value is not None:
             return immediate_value
         elif target == '(HL)':
-            return self.memory.read_byte(self.registers.hl)
+            return self._read(self.registers.hl)
         elif target == '(BC)':
-            return self.memory.read_byte(self.registers.bc)
+            return self._read(self.registers.bc)
         elif target == '(DE)':
-            return self.memory.read_byte(self.registers.de)
+            return self._read(self.registers.de)
         else:
             return self._get_register_value(target)
 
@@ -665,7 +670,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -683,7 +688,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -702,7 +707,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -721,7 +726,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -739,7 +744,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -758,7 +763,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -776,7 +781,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -793,7 +798,7 @@ class InstructionImplementations:
 
         # Store result
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -814,7 +819,7 @@ class InstructionImplementations:
 
         # Store result (no flags affected)
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
 
@@ -825,6 +830,6 @@ class InstructionImplementations:
 
         # Store result (no flags affected)
         if target == '(HL)':
-            self.memory.write_byte(self.registers.hl, result)
+            self._write(self.registers.hl, result)
         else:
             self._set_register_value(target, result)
