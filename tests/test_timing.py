@@ -64,3 +64,41 @@ def test_timer_read_sees_its_own_cycle():
     ldh = [0x00, 0x00, 0x00, 0xF0, 0x05]      # NOP NOP NOP; LDH A,(05)
     for extra in range(4):
         assert tima_after([0x00] * extra + ld_nn) == tima_after([0x00] * extra + ldh)
+
+
+def test_serial_transfer_takes_8_bits_of_the_8192_hz_clock():
+    cpu = _cpu([0x00] * 2000)
+    mem = cpu.memory
+    cpu._system_counter = 0
+    mem.write_byte(0xFF0F, 0x00)
+    mem.write_byte(0xFF01, 0x42)
+    mem.write_byte(0xFF02, 0x81)              # start, internal clock
+    steps = 0
+    while mem.read_byte(0xFF02) & 0x80:
+        cpu.step()
+        steps += 1
+    assert steps == 8 * 128                   # 8 bits x 512 T-cycles, in 1-M-cycle NOPs
+    assert mem.read_byte(0xFF01) == 0xFF      # nothing connected: 1s shifted in
+    assert mem.read_byte(0xFF0F) & 0x08       # serial interrupt
+
+
+def test_serial_with_external_clock_never_finishes():
+    cpu = _cpu([0x00] * 1500)
+    cpu.memory.write_byte(0xFF02, 0x80)
+    for _ in range(1500):
+        cpu.step()
+    assert cpu.memory.read_byte(0xFF02) & 0x80
+
+
+def test_joypad_interrupt_only_for_selected_group():
+    cpu = _cpu([0x00])
+    mem = cpu.memory
+    mem.write_byte(0xFF0F, 0x00)
+    mem.write_byte(0xFF00, 0x20)              # select directions only
+    mem.joypad.press_button("a")
+    assert not mem.read_byte(0xFF0F) & 0x10
+    mem.joypad.press_button("left")
+    assert mem.read_byte(0xFF0F) & 0x10
+    mem.write_byte(0xFF0F, 0x00)
+    mem.write_byte(0xFF00, 0x10)              # now select buttons: A is held -> edge
+    assert mem.read_byte(0xFF0F) & 0x10
