@@ -79,7 +79,8 @@ class Memory:
         # Check for OAM access restrictions during PPU modes (only for CPU reads, not PPU reads)
         # OAM (0xFE00-0xFE9F) is blocked during Mode 2 (OAM Search) and Mode 3 (Pixel Transfer)
         # BUT only when LCD is enabled (LCDC bit 7)
-        if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFE9F:
+        # The unusable area 0xFEA0-0xFEFF follows the same lock.
+        if not self._bypass_ppu_restrictions and 0xFE00 <= address <= 0xFEFF:
             if self._cpu and hasattr(self._cpu, 'ppu'):
                 lcdc = self._data[0xFF40]
                 if lcdc & 0x80:  # LCD is ON
@@ -87,6 +88,10 @@ class Memory:
                     # Mode 2 = OAM Search, Mode 3 = Pixel Transfer
                     if ppu_mode == 2 or ppu_mode == 3:
                         return 0xFF  # Return 0xFF for blocked reads
+
+        # Unusable area reads 0x00 on DMG when not locked.
+        if 0xFEA0 <= address <= 0xFEFF:
+            return 0x00
 
         # Check for VRAM access restrictions during PPU Mode 3 (only for CPU reads, not PPU reads)
         # VRAM (0x8000-0x9FFF) is blocked during Mode 3 (Pixel Transfer)
@@ -123,6 +128,14 @@ class Memory:
         # ROM (0x0000-0x7FFF) is read-only. Games write here to talk to a
         # cartridge mapper (MBC); with no mapper the write has no effect.
         if address < 0x8000:
+            return
+
+        # Echo RAM (0xE000-0xFDFF) is the same memory as 0xC000-0xDDFF.
+        if 0xE000 <= address <= 0xFDFF:
+            address -= 0x2000
+
+        # 0xFEA0-0xFEFF is unusable; writes have no effect.
+        if 0xFEA0 <= address <= 0xFEFF:
             return
 
         # Check for OAM write restrictions during PPU modes (only for CPU writes, not PPU writes)
