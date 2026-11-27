@@ -252,3 +252,17 @@ def test_first_line_after_lcd_on_has_no_early_locks():
     assert not ppu.vram_locked and not ppu.oam_locked
     ppu.step(4)
     assert ppu.vram_locked and mem.read_byte(0xFF41) & 0x03 == 3
+
+
+def test_lyc_0_interrupt_fires_once_across_line_153_to_0():
+    """LY reads 0 from early in line 153 through line 0; an LYC=0 STAT
+    interrupt must fire once there, not again at line 0 (Final Fantasy Legend
+    relies on this)."""
+    cpu = _booted()
+    mem, ppu = cpu.memory, cpu.ppu
+    _to_line_start(ppu, 150)
+    mem.write_byte(0xFF45, 0)
+    mem.write_byte(0xFF41, 0x40)
+    hits = _irq_counter(ppu)
+    _to_line_start(ppu, 2)
+    assert [ly for bit, ly, _ in hits if bit == 1] == [153]

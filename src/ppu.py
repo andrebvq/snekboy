@@ -272,13 +272,15 @@ class PPU:
     def _end_line(self):
         """Last 4 dots of a line: LY already shows the next line, the LY=LYC
         flag reads 0 until the comparison runs at the new line, and OAM locks
-        if a visible line follows."""
+        if a visible line follows. From line 153 to line 0 LY stays 0, so the
+        flag (and any LYC=0 interrupt line) stays as it is."""
         d = self.memory._data
         self._line_ending = True
         ly = self.ly
-        d[0xFF44] = ly + 1 if ly < 153 else 0
-        d[0xFF41] &= ~0x04
-        self._update_stat()
+        if ly < 153:
+            d[0xFF44] = ly + 1
+            d[0xFF41] &= ~0x04
+            self._update_stat()
         if ly < 143 or ly == 153:
             self.oam_locked = True
 
