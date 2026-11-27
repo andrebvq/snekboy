@@ -1,5 +1,5 @@
-"""Lazy timer/PPU sync in the frame runner must give exactly the same run as
-syncing after every instruction: same registers and cycle count after each
+"""The frame runner (inline loop with lazy timer/PPU sync) must give exactly
+the same run as calling step() with a sync after every instruction: same registers and cycle count after each
 instruction, same timer/PPU state at the end of each run."""
 import random
 from src.cpu import CPU
@@ -14,8 +14,13 @@ def _program(rng):
     code = [0xFB]                                               # EI
     for _ in range(rng.randrange(20, 60)):
         kind = rng.random()
-        if kind < 0.15:
+        if kind < 0.1:
             code += [0xF0, rng.choice(IO_READS)]                # LDH A,(reg)
+        elif kind < 0.15:
+            if rng.random() < 0.5:                              # LD A,(nn) / LD (nn),A on I/O:
+                code += [0xFA, rng.choice(IO_READS), 0xFF]      # the access timing depends on
+            else:                                               # the 16-bit operand fetch
+                code += [0x3E, rng.randrange(256), 0xEA, rng.choice([0x05, 0x45, 0x0F]), 0xFF]
         elif kind < 0.4:
             reg = rng.choice(IO_WRITES)
             if reg == 0x40:
@@ -75,11 +80,40 @@ def _world(cpu):
 def _run(seed, lazy):
     cpu = _cpu(seed)
     log, worlds = [], []
-    step = cpu.step
-    def logged(*a):
-        log.append(_regs(cpu))
-        return step(*a)
-    cpu.step = logged
+
+    def record():
+        if not cpu.halted:
+            log.append(_regs(cpu))
+    # Every I/O access made by an instruction, with its position inside the
+    # instruction (bus timing). Accesses made while the timer/PPU advance
+    # (TAC/TIMA reads, IF requests) legitimately happen at other times under
+    # lazy sync and are left out.
+    mem = cpu.memory
+    rd, wr, advance = mem.read_byte, mem.write_byte, cpu._advance
+    inside = [0]
+    def advancing(t):
+        inside[0] += 1
+        try:
+            return advance(t)
+        finally:
+            inside[0] -= 1
+    def read(a):
+        if 0xFF00 <= a < 0xFF80 and not inside[0]:
+            log.append(('R', cpu.total_cycles, a, cpu._acc))
+        return rd(a)
+    def write(a, v):
+        if 0xFF00 <= a < 0xFF80 and not inside[0]:
+            log.append(('W', cpu.total_cycles, a, cpu._acc, v))
+        return wr(a, v)
+    mem.read_byte, mem.write_byte, cpu._advance = read, write, advancing
+    if lazy:
+        cpu._on_instruction = record                            # frame loop hook
+    else:
+        step = cpu.step
+        def logged(*a):
+            record()
+            return step(*a)
+        cpu.step = logged
     rng = random.Random(seed + 1)
     end = cpu.total_cycles
     for _ in range(12):
@@ -113,11 +147,9 @@ def test_lazy_sync_actually_defers():
         return advance(t)
     cpu._advance = counted
     steps = [0]
-    step = cpu.step
-    def counted_step(*a):
+    def count():
         steps[0] += 1
-        return step(*a)
-    cpu.step = counted_step
+    cpu._on_instruction = count                                 # instructions run
     cpu.run_until_cycle(cpu.total_cycles + 10 * 70224)
     assert calls[0] < steps[0]                                  # fewer syncs than instructions
 

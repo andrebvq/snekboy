@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.2 — Frame loop
+
+- Each frame runs in one inline loop for the common case (CPU running,
+  code in ROM/RAM, no DMA or pending interrupt); anything else goes
+  through step() as before.
+
+No change in behaviour: every executed instruction of 12 games matches
+v0.9.1; test results unchanged. Gameplay speed of the slower games up
+6-33% (Kirby 39 -> 51 fps, Tetris 41 -> 51, Zelda DX 53 -> 66).
+
 ## 0.9.1 — Lazy timer/PPU sync
 
 - In the frame loop the timer and PPU are brought up to date only when
