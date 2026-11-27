@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0 — Graphics (PPU)
+
+- Window keeps its own line counter, is hidden when the background is off,
+  and shifts left for WX < 7.
+- Sprite-behind-background checks the background colour number, not the
+  shade; overlapping sprites resolve by X then OAM index.
+- LCD off stops the PPU (LY 0, no interrupts, blank screen); LCD on
+  restarts at line 0.
+- STAT interrupt fires once per rising edge of the combined STAT line;
+  STAT writes keep read-only bits; LYC writes re-check the match.
+- Line 153 reads LY 0 after its first dots.
+
+dmg-acid2 now matches the reference (818 wrong pixels -> 0).
+mooneye 62 -> 66 passing; Blargg unchanged. Wario Land II no longer stops
+at a white screen after its intro.
+
 ## 0.5.0 — Interrupts and timer
 
 - `DI` right after `EI` no longer lets an interrupt through.
