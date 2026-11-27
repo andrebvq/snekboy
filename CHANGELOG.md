@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.1 — Lazy timer/PPU sync
+
+- In the frame loop the timer and PPU are brought up to date only when
+  something could observe them (I/O or video memory access, a possible
+  interrupt, end of frame) instead of after every instruction.
+
+No change in behaviour: every executed instruction of 12 games matches
+v0.9; test results unchanged. Busy-waiting games 12-22% faster (Tetris
+36 -> 44 fps, Kirby 33 -> 40, Zelda DX 34 -> 41).
+
 ## 0.9.0 — Speed, part 2
 
 - Dedicated handlers for the frequent instructions (loads, arithmetic,
@@ -11,7 +21,7 @@
   evenly spaced green palette (new default), the classic one and grey.
 
 No change in behaviour: every executed instruction of 12 games matches
-v0.8 cycle for cycle; test results unchanged. 7 of 11 tested games now
+v0.8 cycle for cycle; test results unchanged. 6 of 11 tested games now
 reach full speed (e.g. Super Mario Land 36 -> 116 fps uncapped; the window
 is capped at 60); Tetris 29 -> 36 fps.
 
