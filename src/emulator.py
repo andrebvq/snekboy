@@ -90,6 +90,13 @@ class Emulator:
         print(f"Loading ROM: {rom_path}")
         self.cpu.memory.load_rom_file(rom_path)
 
+        # Battery-backed cartridge RAM is kept next to the ROM as <name>.sav
+        import os
+        cart = self.cpu.memory.cartridge
+        self.save_path = os.path.splitext(rom_path)[0] + ".sav" if cart.battery else None
+        if self.save_path:
+            cart.load(self.save_path)
+
         # Simulate boot ROM
         self.cpu.simulate_boot()
 
@@ -193,7 +200,14 @@ class Emulator:
             self.tracer.close()
             print(f"Trace file closed: {self.trace_file}")
 
+        self.save()
         self.display.close()
+
+    def save(self):
+        """Write battery-backed cartridge RAM to the .sav file."""
+        if getattr(self, "save_path", None):
+            self.cpu.memory.cartridge.save(self.save_path)
+            print(f"Saved: {self.save_path}")
 
     def run_headless(self, max_cycles=1_000_000):
         """
