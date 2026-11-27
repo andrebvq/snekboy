@@ -6,7 +6,7 @@ A Game Boy (DMG) emulator written in Python, implementing the complete Sharp LR3
 
 ## Overview
 
-SnekBoy is a Game Boy emulator that aims to accurately emulate the original Game Boy hardware, including CPU, PPU (graphics), timer system, joypad input, and interrupt handling. It passes Blargg's 11 cpu_instrs single tests and instr_timing. Games without a memory bank controller (Tetris, Dr. Mario, Alleyway) run; most others need MBC support, which is not implemented yet.
+SnekBoy is a Game Boy emulator that aims to accurately emulate the original Game Boy hardware, including CPU, PPU (graphics), timer system, joypad input, and interrupt handling. It passes Blargg's cpu_instrs and instr_timing and supports MBC1, MBC2, MBC3 and MBC5 cartridges with battery saves.
 
 <img width="306" height="276" alt="tt" src="https://github.com/user-attachments/assets/95abb3ab-3b99-4bba-a482-7d5468d314d6" />
 
@@ -276,11 +276,11 @@ MIT License - See LICENSE file for details.
 
 ## Development Status
 
-Current version: 0.2.0 (Pre-Alpha). See `CHANGELOG.md`.
+Current version: 0.3.0 (Pre-Alpha). See `CHANGELOG.md`.
 
-- Passes: Blargg cpu_instrs (11 single tests), instr_timing, halt_bug.
-- Tetris is playable; ROM-only games run.
-- Not yet implemented: memory bank controllers (MBC), audio (APU).
-- Known gaps: memory timing is per instruction, not per memory access; some PPU features (signed tile addressing, window line counter) are wrong.
+- Passes: Blargg cpu_instrs, instr_timing, halt_bug; mooneye MBC1/MBC2/MBC5 tests.
+- Cartridges: ROM only, MBC1, MBC2, MBC3 (with clock), MBC5. Battery saves go to `<rom>.sav`.
+- Not yet implemented: audio (APU), MBC1 multicart.
+- Known gaps: runs at about 10% of full speed; memory timing is per instruction, not per memory access; window rendering and LCD on/off behaviour are incomplete.
 
 For detailed implementation status and known issues, see `docs/development.md`.
