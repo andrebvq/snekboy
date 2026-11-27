@@ -38,3 +38,31 @@ def test_unusable_area_reads_zero_and_ignores_writes():
     mem.write_byte(0xFEF9, 0xFC)
     assert mem.read_byte(0xFEF9) == 0x00
     assert mem.read_byte(0xFEA0) == 0x00
+
+
+def test_io_unused_bits_read_as_one():
+    cpu = _cpu_with_rom()
+    mem = cpu.memory
+    mem.write_byte(0xFF0F, 0x00)
+    assert mem.read_byte(0xFF0F) == 0xE0      # IF: bits 5-7 unused
+    mem.write_byte(0xFF07, 0x00)
+    assert mem.read_byte(0xFF07) == 0xF8      # TAC: bits 3-7 unused
+    assert mem.read_byte(0xFF41) & 0x80       # STAT: bit 7 unused
+    assert mem.read_byte(0xFF4D) == 0xFF      # KEY1 does not exist on DMG
+    assert mem.read_byte(0xFF03) == 0xFF      # unmapped
+    assert mem.read_byte(0xFF7F) == 0xFF      # unmapped
+    mem.write_byte(0xFFFF, 0x00)
+    assert mem.read_byte(0xFFFF) == 0x00      # IE keeps all 8 bits
+
+
+def test_ff50_unmaps_boot_rom_on_bit0():
+    from src.memory import Memory
+    mem = Memory()
+    rom = bytearray(0x8000)
+    rom[0x0010] = 0xAB
+    mem.load_rom(bytes(rom))
+    assert mem.boot_rom_enabled
+    mem.write_byte(0xFF50, 0xFF)              # MGB boot ROM writes 0xFF; only bit 0 matters
+    assert not mem.boot_rom_enabled
+    assert mem.read_byte(0x0010) == 0xAB
+    assert mem.read_byte(0xFF50) == 0xFF
