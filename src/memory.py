@@ -207,21 +207,32 @@ class Memory:
         # DIV register (0xFF04) - writing any value resets it to 0 AND the system counter
         if address == 0xFF04:
             self._data[address] = 0x00
-            # Reset the CPU's system counter
             if self._cpu:
+                # TIMA counts falling edges of (selected counter bit AND timer enable).
+                # Clearing the counter while that bit is 1 is a falling edge too.
+                tac = self._data[0xFF07]
+                if tac & 0x04 and (self._cpu._system_counter >> (9, 3, 5, 7)[tac & 0x03]) & 1:
+                    self._cpu._trigger_timer_tick()
                 self._cpu._system_counter = 0
             return
 
-        # TIMA register (0xFF05) - handle writes during overflow delay
+        # TIMA register (0xFF05)
         if address == 0xFF05:
-            if self._cpu and self._cpu._timer_overflow_cycles > 0:
-                # Writing to TIMA during overflow delay cancels the reload and interrupt
-                self._cpu._timer_overflow_cycles = 0
+            if self._cpu:
+                if self._cpu._tima_reloaded:
+                    return                    # reload cycle: TMA wins, the write is lost
+                if self._cpu._timer_overflow_cycles > 0:
+                    # Writing to TIMA during overflow delay cancels the reload and interrupt
+                    self._cpu._timer_overflow_cycles = 0
             self._data[address] = value
             return
 
-        # TMA register (0xFF06) - no special handling needed, but might be written during reload
-        # The reload logic in CPU will handle reading the new value if written on reload cycle
+        # TMA register (0xFF06): during the reload cycle the new value also goes to TIMA
+        if address == 0xFF06:
+            self._data[address] = value
+            if self._cpu and self._cpu._tima_reloaded:
+                self._data[0xFF05] = value
+            return
 
         # TAC register (0xFF07) - obscure behavior on write
         if address == 0xFF07:

@@ -45,10 +45,12 @@ class CPU(InstructionImplementations):
         # The Game Boy has an internal 16-bit counter that increments every T-cycle (M-cycle = 4 T-cycles)
         self._system_counter = 0  # Internal 16-bit counter
         self._prev_timer_bit = False  # Previous value of selected timer bit for edge detection
-        self._timer_overflow_cycles = 0  # Delay counter for TMA reload (0 = no overflow, 1-4 = in delay)
+        self._timer_overflow_cycles = 0  # 1 while TIMA reads 0x00 after overflow, before the TMA reload
+        self._tima_reloaded = False  # True if the most recent M-cycle reloaded TIMA from TMA
 
         # Create memory with reference to this CPU
         self.memory = memory if memory else Memory(cpu=self)
+        self.memory._cpu = self   # a Memory passed in must also reach the CPU's timer
 
         # Create PPU with reference to memory and interrupt callback
         self.ppu = PPU(self.memory, self._request_interrupt)
@@ -355,15 +357,8 @@ class CPU(InstructionImplementations):
         if triggered == 0:
             return False
 
-        # Find highest priority interrupt (lowest bit number)
-        # Priority: VBlank (0) > LCD (1) > Timer (2) > Serial (3) > Joypad (4)
-        for bit in range(5):
-            if triggered & (1 << bit):
-                # Service this interrupt
-                self._service_interrupt(bit)
-                return True
-
-        return False
+        self._service_interrupt()
+        return True
 
     def _request_interrupt(self, interrupt_bit: int) -> None:
         """
@@ -376,31 +371,31 @@ class CPU(InstructionImplementations):
         if_flags |= (1 << interrupt_bit)
         self.memory.write_byte(0xFF0F, if_flags)
 
-    def _service_interrupt(self, interrupt_bit: int) -> None:
-        """Service an interrupt by jumping to its vector"""
-        # Disable IME
+    def _service_interrupt(self) -> None:
+        """Dispatch the highest-priority pending interrupt.
+
+        The CPU pushes PC's high byte first and only then decides which interrupt
+        to run. If that push overwrote IE (SP was 0x0000) and nothing enabled is
+        left, the dispatch is cancelled and execution continues at 0x0000.
+        """
         self.ime = False
-
-        # Cancel EI pending if interrupt occurs
         self._ei_pending = 0
-
-        # Exit halt mode
         self.halted = False
 
-        # Clear the interrupt flag
-        if_flags = self.memory.read_byte(0xFF0F)
-        if_flags &= ~(1 << interrupt_bit)
-        self.memory.write_byte(0xFF0F, if_flags)
+        pc = self.registers._pc
+        sp = (self.registers._sp - 1) & 0xFFFF
+        self.memory.write_byte(sp, pc >> 8)
+        triggered = self.memory.read_byte(0xFFFF) & self.memory.read_byte(0xFF0F) & 0x1F
+        sp = (sp - 1) & 0xFFFF
+        self.memory.write_byte(sp, pc & 0xFF)
+        self.registers._sp = sp
 
-        # Push PC to stack
-        self.registers._sp = validate_word(self.registers._sp - 1)
-        self.memory.write_byte(self.registers._sp, (self.registers._pc >> 8) & 0xFF)
-        self.registers._sp = validate_word(self.registers._sp - 1)
-        self.memory.write_byte(self.registers._sp, self.registers._pc & 0xFF)
-
-        # Jump to interrupt vector
-        interrupt_vectors = [0x0040, 0x0048, 0x0050, 0x0058, 0x0060]
-        self.registers._pc = interrupt_vectors[interrupt_bit]
+        if not triggered:
+            self.registers._pc = 0x0000
+            return
+        bit = (triggered & -triggered).bit_length() - 1     # lowest bit = highest priority
+        self.memory.write_byte(0xFF0F, self.memory.read_byte(0xFF0F) & ~(1 << bit))
+        self.registers._pc = 0x0040 + 8 * bit
 
     def _trigger_timer_tick(self) -> None:
         """
@@ -412,10 +407,10 @@ class CPU(InstructionImplementations):
 
         if tima > 0xFF:
             # Overflow - set TIMA to 0 and start delay
-            self.memory.write_byte(0xFF05, 0x00)
+            self.memory._data[0xFF05] = 0x00
             self._timer_overflow_cycles = 1
         else:
-            self.memory.write_byte(0xFF05, tima)
+            self.memory._data[0xFF05] = tima
 
     def _update_timers(self, cycles: int) -> None:
         """
@@ -429,13 +424,16 @@ class CPU(InstructionImplementations):
         # Process each M-cycle individually for accuracy
         # Note: 1 M-cycle = 4 T-cycles
         for _ in range(cycles):
+            if self._tima_reloaded:
+                self._tima_reloaded = False
             # Handle timer overflow delay (1 M-cycle delay before TMA loads)
             if self._timer_overflow_cycles > 0:
                 self._timer_overflow_cycles -= 1
                 if self._timer_overflow_cycles == 0:
                     # Reload TIMA from TMA and request interrupt
                     tma = self.memory.read_byte(0xFF06)
-                    self.memory.write_byte(0xFF05, tma)
+                    self.memory._data[0xFF05] = tma
+                    self._tima_reloaded = True
 
                     # Set timer interrupt flag
                     if_flags = self.memory.read_byte(0xFF0F)
@@ -473,10 +471,10 @@ class CPU(InstructionImplementations):
 
                     if tima > 0xFF:
                         # Overflow detected - set TIMA to 0 and start delay
-                        self.memory.write_byte(0xFF05, 0x00)
+                        self.memory._data[0xFF05] = 0x00
                         self._timer_overflow_cycles = 1  # 1 M-cycle delay
                     else:
-                        self.memory.write_byte(0xFF05, tima)
+                        self.memory._data[0xFF05] = tima
 
     def _idle_step(self) -> int:
         """Advance timer and PPU by one M-cycle without executing anything."""
@@ -716,7 +714,11 @@ class CPU(InstructionImplementations):
             if_flags = self.memory.read_byte(0xFF0F)
             interrupt_pending = (ie & if_flags & 0x1F) != 0
 
-            if not self.ime and interrupt_pending:
+            if not self.ime and interrupt_pending and self._ei_pending == 1:
+                # EI right before HALT: IME turns on now, the interrupt is taken
+                # and returns to the HALT itself, which then runs again.
+                self.registers._pc = (self.registers._pc - 1) & 0xFFFF
+            elif not self.ime and interrupt_pending:
                 # HALT bug: halt exits immediately, PC fails to increment after next instruction
                 # This causes the next instruction to be executed twice
                 # Set flag to skip PC increment on the next fetch

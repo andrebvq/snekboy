@@ -209,12 +209,15 @@ class InstructionImplementations:
     def _execute_di(self) -> None:
         """DI - Disable Interrupts"""
         self.ime = False
+        self._ei_pending = 0      # EI; DI must not let any interrupt through
 
     def _execute_ei(self) -> None:
         """EI - Enable Interrupts"""
         # EI enables interrupts AFTER the next instruction (Game Boy quirk)
         # Set to 2 so it counts down: 2->1 (next instr), 1->0 (enable IME)
-        self._ei_pending = 2
+        # A second EI while one is pending must not restart the delay.
+        if not self.ime and self._ei_pending == 0:
+            self._ei_pending = 2
 
     # === CONTROL FLOW INSTRUCTIONS ===
 
