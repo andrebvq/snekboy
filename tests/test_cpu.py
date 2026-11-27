@@ -85,6 +85,22 @@ def test_run_until():
     assert cpu.registers._pc == 0x010A  # 10 instructions executed
     print("✓ run_until test passed")
 
+def test_illegal_opcode_locks_cpu():
+    """An illegal opcode stops the CPU instead of raising; time keeps passing."""
+    from src.cpu import ILLEGAL_OPCODES
+    for op in ILLEGAL_OPCODES:
+        cpu = CPU(_mem_with_program([0x00, op, 0x00]))
+        cpu.step()                      # NOP
+        cpu.step()                      # illegal -> lock
+        assert cpu.locked
+        pc = cpu.registers._pc
+        cycles = cpu.total_cycles
+        for _ in range(5):
+            assert cpu.step() == 4
+        assert cpu.registers._pc == pc
+        assert cpu.total_cycles == cycles + 20
+
+
 if __name__ == "__main__":
     test_nop_instruction()
     test_add_immediate()
