@@ -103,7 +103,7 @@ class CPU(InstructionImplementations):
             self._halt_bug_active = False
             # Don't increment PC - instruction will be fetched again next time
         else:
-            self.registers._pc = validate_word(self.registers._pc + 1)
+            self.registers._pc = (self.registers._pc + 1) & 0xFFFF
 
         return value
     
@@ -111,7 +111,7 @@ class CPU(InstructionImplementations):
         """Fetch next word (16-bit) from memory at PC and increment PC"""
         pc = self.registers._pc
         value = self._read(pc) | (self._read((pc + 1) & 0xFFFF) << 8)
-        self.registers._pc = validate_word(pc + 2)
+        self.registers._pc = (pc + 2) & 0xFFFF
         return value
     
     def _check_interrupts(self) -> bool:
@@ -312,10 +312,19 @@ class CPU(InstructionImplementations):
 
     def _read(self, address: int) -> int:
         """CPU bus read: one M-cycle."""
-        if 0xFE00 <= address < 0xFF80 or 0x8000 <= address < 0xA000 or self.memory._dma_busy:
+        mem = self.memory
+        if not mem._dma_busy:
+            # Fast path: cartridge ROM (past the boot ROM area), work RAM and
+            # high RAM have no side effects and nothing to catch up with.
+            if 0x0100 <= address < 0x8000 or 0xC000 <= address < 0xE000 or 0xFF80 <= address <= 0xFFFF:
+                self._acc += 4
+                return mem._data[address]
+            if 0xFE00 <= address < 0xFF80 or 0x8000 <= address < 0xA000:
+                self._catch_up()
+        else:
             self._catch_up()
         self._acc += 4
-        return self.memory.read_byte(address)
+        return mem.read_byte(address)
 
     def _write(self, address: int, value: int) -> None:
         """CPU bus write: one M-cycle."""
@@ -347,7 +356,11 @@ class CPU(InstructionImplementations):
         # If halted, update timers and PPU (so interrupt flags can be set)
         if self.halted:
             cycles = 4  # 4 T-cycles = 1 M-cycle
-            self._advance(cycles)
+            if self.memory._dma_busy:
+                self._advance(cycles)
+            else:                       # same as _advance(4), one call less
+                self._update_timers(1)
+                self.ppu.step(4)
             self.total_cycles += cycles
 
             # Then check if we should wake (after timers updated)
@@ -410,7 +423,10 @@ class CPU(InstructionImplementations):
 
         # Advance the timer, PPU and DMA through the rest of the instruction
         self._acc = cycles
-        self._catch_up()
+        t = cycles - self._synced
+        if t > 0:
+            self._synced = cycles
+            self._advance(t)
 
         self.total_cycles += cycles
 
