@@ -17,9 +17,9 @@ def test_default_green_palette_has_evenly_spaced_shades():
     assert max(steps) < 1.5 * min(steps)
 
 
-def test_title_shows_version_and_palette_and_p_cycles():
+def test_title_shows_version_only_and_p_cycles_palettes():
     d = Display()
-    assert pygame.display.get_caption()[0] == f"SnekBoy v{__version__} - green"
     for name in ("classic", "grey", "green"):
+        assert pygame.display.get_caption()[0] == f"SnekBoy v{__version__}"
         d.next_palette()
         assert d.palette_name == name and d.COLORS == Display.PALETTES[name]

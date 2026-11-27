@@ -7,7 +7,7 @@
 - A halted CPU skips ahead to the next PPU or timer event instead of
   idling one cycle at a time.
 - The frame loop keeps fixed frame ends (emulated time ran ~0.02% slow).
-- Window title shows the version and palette; P switches between an
+- Window title shows the version; P switches between an
   evenly spaced green palette (new default), the classic one and grey.
 
 No change in behaviour: every executed instruction of 12 games matches

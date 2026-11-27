@@ -46,6 +46,7 @@ class Display:
         self.height = self.GB_HEIGHT * self.SCALE
 
         self.screen = pygame.display.set_mode((self.width, self.height))
+        pygame.display.set_caption(title)
         self.set_palette(palette)
 
         # Create surface for Game Boy screen (will be scaled up)
@@ -56,10 +57,9 @@ class Display:
         self.target_fps = 60  # Game Boy runs at ~59.7 FPS
 
     def set_palette(self, name):
-        """Switch to the named palette; the window title shows its name."""
+        """Switch to the named palette."""
         self.palette_name = name
         self.COLORS = self.PALETTES[name]
-        pygame.display.set_caption(f"{self.title} - {name}")
 
     def next_palette(self):
         names = list(self.PALETTES)
