@@ -191,3 +191,64 @@ def test_post_boot_stat_matches_ppu_mode():
     cpu = _booted()
     assert cpu.memory.read_byte(0xFF41) & 0x03 == cpu.ppu.current_mode == 1
     assert cpu.memory.read_byte(0xFF44) == 0
+
+
+# --- line timing (mooneye lcdon_timing / lcdon_write_timing / intr_2_*) ----------
+
+def _dot(ppu, ly, dot):
+    _to_line_start(ppu, ly)
+    ppu.step(dot - ppu.cycle_counter)
+
+
+def test_ly_advances_4_dots_before_the_line_ends():
+    cpu = _booted()
+    mem, ppu = cpu.memory, cpu.ppu
+    mem.write_byte(0xFF45, 1)
+    _dot(ppu, 0, 448)
+    assert mem.read_byte(0xFF44) == 0
+    ppu.step(4)                                   # dot 452
+    assert mem.read_byte(0xFF44) == 1
+    assert not mem.read_byte(0xFF41) & 0x04       # LYC flag waits for the new line
+    assert mem.read_byte(0xFF41) & 0x03 == 0      # still HBlank
+    ppu.step(4)                                   # dot 0 of line 1
+    assert mem.read_byte(0xFF41) & 0x07 == 0x06   # mode 2, LYC flag set
+
+
+def test_access_locks_around_mode_3():
+    cpu = _booted()
+    ppu = cpu.ppu
+    _dot(ppu, 1, 72)
+    assert ppu.oam_locked and ppu.oam_write_locked and not ppu.vram_locked
+    ppu.step(4)                                   # dot 76
+    assert ppu.vram_locked and not ppu.vram_write_locked
+    assert ppu.oam_locked and not ppu.oam_write_locked
+    ppu.step(4)                                   # dot 80: mode 3
+    assert ppu.vram_write_locked and ppu.oam_write_locked
+    _dot(ppu, 1, 448)
+    assert not ppu.oam_locked
+    ppu.step(4)                                   # dot 452
+    assert ppu.oam_locked and not ppu.oam_write_locked
+
+
+def test_mode_3_longer_with_scroll_and_sprites():
+    cpu = _booted()
+    d, ppu = cpu.memory._data, cpu.ppu
+    d[0xFF40] = 0x93                              # sprites on
+    d[0xFF43] = 5                                 # SCX fine scroll 5
+    for i in range(10):
+        _sprite(d, i, 0, 2, 0, 0)                 # 10 sprites at screen X 0 (OAM X 8), line 2
+    _dot(ppu, 2, 84)
+    # SCX adds 5. Sprites: OAM X 8 + 5 lands at pixel 5 of a tile -> 6 + 0 for the
+    # first, 6 for each of the other 9 (same tile); minus the 3-dot calibration.
+    assert ppu._mode3_end == 252 + 5 + (6 + 9 * 6) - 3
+
+
+def test_first_line_after_lcd_on_has_no_early_locks():
+    cpu = _booted()
+    mem, ppu = cpu.memory, cpu.ppu
+    mem.write_byte(0xFF40, 0x11)
+    mem.write_byte(0xFF40, 0x91)
+    ppu.step(76)
+    assert not ppu.vram_locked and not ppu.oam_locked
+    ppu.step(4)
+    assert ppu.vram_locked and mem.read_byte(0xFF41) & 0x03 == 3
