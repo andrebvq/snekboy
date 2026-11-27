@@ -56,8 +56,10 @@ class Joypad:
         """
         # Only bits 4-5 are writable
         # Note: bit = 0 means selected, so we invert the logic
+        lines_before = self.read_p1() & 0x0F
         self.select_buttons = (value & 0x20) == 0  # Bit 5 = 0 means buttons selected
         self.select_dpad = (value & 0x10) == 0     # Bit 4 = 0 means dpad selected
+        self._check_lines(lines_before)            # selecting a held button is an edge too
 
     def read_p1(self) -> int:
         """
@@ -119,6 +121,7 @@ class Joypad:
 
     def press_button(self, button: str) -> None:
         """Press a button (set it to pressed state and trigger interrupt)"""
+        lines_before = self.read_p1() & 0x0F
         button = button.lower()
         if button == 'a':
             self.button_a = True
@@ -137,9 +140,13 @@ class Joypad:
         elif button == 'right':
             self.dpad_right = True
 
-        # Trigger joypad interrupt (bit 4 of IF register)
-        if self.interrupt_callback:
-            self.interrupt_callback(4)
+        # The joypad interrupt fires when a selected P1 line goes from 1 to 0,
+        # so only for a button in a group the game has selected.
+        self._check_lines(lines_before)
+
+    def _check_lines(self, lines_before: int) -> None:
+        if lines_before & ~self.read_p1() & 0x0F and self.interrupt_callback:
+            self.interrupt_callback(4)  # bit 4 of IF
 
     def release_button(self, button: str) -> None:
         """Release a button (set it to not pressed state)"""

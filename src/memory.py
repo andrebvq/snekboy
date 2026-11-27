@@ -214,6 +214,8 @@ class Memory:
                 tac = self._data[0xFF07]
                 if tac & 0x04 and (self._cpu._system_counter >> (9, 3, 5, 7)[tac & 0x03]) & 1:
                     self._cpu._trigger_timer_tick()
+                if self._cpu._serial_bits and self._cpu._system_counter & 0x100:
+                    self._cpu._serial_shift()
                 self._cpu._system_counter = 0
             return
 
@@ -333,9 +335,14 @@ class Memory:
             self._data[address] = value
 
         elif address == 0xFF02:
-            # Serial control - if bit 7 is set, transfer starts
-            if value == 0x81:
-                # Transfer requested
+            # Serial control: bit 7 starts a transfer, bit 0 selects the internal
+            # clock. The CPU's clock then shifts 8 bits (see CPU._serial_shift);
+            # with an external clock and nothing connected it never finishes.
+            self._data[address] = value
+            if value & 0x81 == 0x81 and self._cpu:
+                self._cpu._serial_bits = 8
+            if value & 0x80:
+                # Log the byte being sent (test ROMs print through the serial port)
                 self._serial_output.append(self._serial_buffer)
 
                 # Print character (convert newline, tab, etc.)
@@ -348,10 +355,7 @@ class Memory:
                 else:
                     # Non-printable: show as hex for debugging
                     print(f'[{self._serial_buffer:02X}]', end='', flush=True)
-
-                self._data[0xFF01] = 0x00  # Clear data
-                self._data[0xFF02] = 0x01  # Mark transfer complete
-                return
+            return
 
         self._data[address] = value
     

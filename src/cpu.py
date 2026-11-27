@@ -47,10 +47,12 @@ class CPU(InstructionImplementations):
         self._prev_timer_bit = False  # Previous value of selected timer bit for edge detection
         self._timer_overflow_cycles = 0  # 1 while TIMA reads 0x00 after overflow, before the TMA reload
         self._tima_reloaded = False  # True if the most recent M-cycle reloaded TIMA from TMA
+        self._serial_bits = 0  # bits left in an internally clocked serial transfer
 
         # Create memory with reference to this CPU
         self.memory = memory if memory else Memory(cpu=self)
         self.memory._cpu = self   # a Memory passed in must also reach the CPU's timer
+        self.memory.joypad.interrupt_callback = self._request_interrupt
 
         # Create PPU with reference to memory and interrupt callback
         self.ppu = PPU(self.memory, self._request_interrupt)
@@ -417,6 +419,15 @@ class CPU(InstructionImplementations):
         else:
             self.memory._data[0xFF05] = tima
 
+    def _serial_shift(self) -> None:
+        """Shift one bit out of SB; with nothing connected, 1s shift in."""
+        d = self.memory._data
+        d[0xFF01] = ((d[0xFF01] << 1) | 1) & 0xFF
+        self._serial_bits -= 1
+        if not self._serial_bits:
+            d[0xFF02] &= 0x7F            # transfer done
+            self._request_interrupt(3)
+
     def _update_timers(self, cycles: int) -> None:
         """
         Update timer registers with cycle-accurate behavior.
@@ -448,6 +459,10 @@ class CPU(InstructionImplementations):
             # Increment system counter (4 T-cycles per M-cycle)
             prev_counter = self._system_counter
             self._system_counter = (self._system_counter + 4) & 0xFFFF
+
+            # Serial (internal clock, 8192 Hz): one bit per falling edge of counter bit 8
+            if self._serial_bits and prev_counter & 0x100 and not self._system_counter & 0x100:
+                self._serial_shift()
 
             # Update DIV register (increments every 256 T-cycles)
             # System counter bits: [15:14][13:6][5:0]
