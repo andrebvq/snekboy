@@ -45,6 +45,9 @@ class CPU(InstructionImplementations):
         self._lazy = False
         self._lag = 0
         self._budget = 0
+        # Called before each instruction (or step()) of the frame loop when set;
+        # used by tracing tools, since the loop does not go through step().
+        self._on_instruction = None
         self.locked = False  # Set by an illegal opcode; the CPU stops until reset
         self.stopped = False  # STOP mode: CPU and timer frozen until a button is pressed
 
@@ -539,15 +542,109 @@ class CPU(InstructionImplementations):
         HALT may skip ahead without passing target, and the timer/PPU are only
         brought up to date when something could observe them: an I/O, VRAM or
         OAM access, an event that could raise an interrupt, or the end of the
-        run. Everything is in sync again when this returns."""
-        self._lazy = self._doctor_logger is None
-        self._budget = 0
-        try:
+        run. Everything is in sync again when this returns.
+
+        The common case (CPU running, code and operands in ROM/WRAM/HRAM, no
+        DMA, no interrupt to dispatch) runs inline below: the same work as
+        step() with lookups hoisted out of the loop. Anything else goes through
+        step() for that instruction."""
+        if self._doctor_logger is not None:
             while self.total_cycles < target:
                 self.step(target)
+            return
+        self._lazy = True
+        self._budget = 0
+        try:
+            self._frame_loop(target)
         finally:
             self._settle_lag()
             self._lazy = False
+
+    def _frame_loop(self, target: int) -> None:
+        regs = self.registers
+        mem = self.memory
+        d = mem._data
+        ops, cb_ops = self._ops, self._cb_ops
+        illegal = ILLEGAL_OPCODES
+        step = self.step
+        hook = self._on_instruction
+        while self.total_cycles < target:
+            if hook is not None and not self.halted:
+                hook()
+            pc = regs._pc
+            if (self.halted or self.locked or self.stopped or self._halt_bug_active
+                    or mem._dma_busy
+                    or not (0x0100 <= pc < 0x8000 or 0xC000 <= pc < 0xE000 or 0xFF80 <= pc)
+                    or (self.ime and d[0xFFFF] & d[0xFF0F] & 0x1F)):
+                step(target)
+                continue
+            opcode = d[pc]
+            if opcode in illegal:
+                step(target)
+                continue
+
+            # Same as step(): owed cycles count as not yet synced.
+            synced = -self._lag
+            self._lag = 0
+            acc = 4
+            pc = (pc + 1) & 0xFFFF
+            fn, t_arg, i_arg, operand, slot, cycles = ops[opcode]
+            if operand:
+                # Operand bytes: read directly in ROM/WRAM/HRAM (no side
+                # effects, nothing to catch up), else through the bus.
+                if operand == 2:
+                    if 0x0100 <= pc < 0x7FFF or 0xC000 <= pc < 0xDFFF or 0xFF80 <= pc < 0xFFFF:
+                        value = d[pc] | (d[pc + 1] << 8)
+                        acc = 12
+                        pc = (pc + 2) & 0xFFFF
+                    else:
+                        regs._pc = pc
+                        self._acc, self._synced = acc, synced
+                        value = self.fetch_word()
+                        pc, acc, synced = regs._pc, self._acc, self._synced
+                else:
+                    if 0x0100 <= pc < 0x8000 or 0xC000 <= pc < 0xE000 or 0xFF80 <= pc:
+                        value = d[pc]
+                        acc = 8
+                        pc = (pc + 1) & 0xFFFF
+                    else:
+                        regs._pc = pc
+                        self._acc, self._synced = acc, synced
+                        value = self.fetch_byte()
+                        pc, acc, synced = regs._pc, self._acc, self._synced
+                    if operand == 4:                    # CB prefix
+                        fn, t_arg, i_arg, cycles = cb_ops[value]
+                        value = None
+                    elif operand == 3:                  # STOP: padding byte
+                        value = None
+                if slot == 1:
+                    t_arg = value
+                elif slot == 2:
+                    i_arg = value
+            regs._pc = pc
+            self._acc = acc
+            self._synced = synced
+
+            actual = fn(t_arg, i_arg)
+            if actual is not None:
+                cycles = actual
+
+            if self._ei_pending > 0:
+                self._ei_pending -= 1
+                if self._ei_pending == 0:
+                    self.ime = True
+
+            self._acc = cycles
+            t = cycles - self._synced
+            if t < self._budget:
+                self._lag = t
+            elif t > 0:
+                self._synced = cycles
+                self._advance(t)
+                self._budget -= t
+                if self._budget <= 0:
+                    self._budget = self._sync_budget()
+            self.total_cycles += cycles
 
     def run_until(self, max_cycles: int) -> None:
         """Run CPU for a specified number of cycles"""
